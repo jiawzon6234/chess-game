@@ -1,0 +1,45 @@
+"""集中管理棋盤與圖形介面相關的常數設定。"""
+
+# 棋盤大小
+BOARD_SIZE = 8
+
+# 每一格在畫面上的像素大小
+SQUARE_SIZE = 90
+
+# 視窗大小 (正方形棋盤)
+WINDOW_SIZE = BOARD_SIZE * SQUARE_SIZE
+
+# 每秒畫面更新次數
+FPS = 30
+
+# ---- 顏色設定 (R, G, B) ----
+LIGHT_SQUARE_COLOR = (240, 217, 181)
+DARK_SQUARE_COLOR = (181, 136, 99)
+
+SELECTED_SQUARE_COLOR = (186, 202, 68)
+LEGAL_MOVE_HINT_COLOR = (106, 168, 79)
+LAST_MOVE_HINT_COLOR = (246, 216, 105)
+
+WHITE_PIECE_FILL = (250, 250, 250)
+BLACK_PIECE_FILL = (40, 40, 40)
+PIECE_OUTLINE_COLOR = (0, 0, 0)
+
+BACKGROUND_COLOR = (30, 30, 30)
+
+# ---- 選單 / 設定畫面 ----
+MENU_BACKGROUND_COLOR = (30, 30, 30)
+MENU_TITLE_COLOR = (240, 217, 181)
+BUTTON_COLOR = (70, 70, 70)
+BUTTON_HOVER_COLOR = (100, 100, 100)
+BUTTON_TEXT_COLOR = (255, 255, 255)
+SLIDER_TRACK_COLOR = (80, 80, 80)
+SLIDER_FILL_COLOR = (106, 168, 79)
+SLIDER_HANDLE_COLOR = (255, 255, 255)
+
+# 棋盤座標系統說明：
+#   board.grid[row][col]
+#   row 0 對應棋盤最上方 (黑方底線，第 8 列)
+#   row 7 對應棋盤最下方 (白方底線，第 1 列)
+#   col 0 對應 a 檔，col 7 對應 h 檔
+FILES = "abcdefgh"
+RANKS = "12345678"

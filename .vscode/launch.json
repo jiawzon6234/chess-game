@@ -1,0 +1,29 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "執行西洋棋（圖形介面 GUI）",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/main.py",
+      "args": ["--mode", "gui"],
+      "console": "integratedTerminal"
+    },
+    {
+      "name": "執行西洋棋（命令列 CLI）",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/main.py",
+      "args": ["--mode", "cli"],
+      "console": "integratedTerminal"
+    },
+    {
+      "name": "執行測試（pytest）",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "pytest",
+      "args": ["tests", "-v"],
+      "console": "integratedTerminal"
+    }
+  ]
+}

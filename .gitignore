@@ -1,0 +1,31 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.eggs/
+
+# 虛擬環境
+venv/
+.venv/
+env/
+
+# 測試 / 快取
+.pytest_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# 打包輸出
+build/
+dist/
+
+# 作業系統 / 編輯器
+.DS_Store
+*.log
+
+# 讓 .vscode 設定檔可被追蹤，但忽略個人化的工作區檔案
+.vscode/*.code-workspace
+
+# 執行期產生的個人化設定（音量等）
+settings.json
