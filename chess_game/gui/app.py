@@ -1,5 +1,6 @@
 """Pygame 主程式：開始畫面、設定畫面，以及棋盤事件迴圈與畫面繪製。"""
 
+import os
 import sys
 from enum import Enum, auto
 
@@ -11,12 +12,35 @@ from ..settings import Settings
 from .fonts import get_font
 from .renderer import Renderer
 from .screens import Button, Slider
+from .sound_effects import SoundEffects
+
+# 背景音樂素材（CC0 授權，來源見 assets/audio/README.md）。
+MUSIC_PATH = os.path.join(
+    os.path.dirname(__file__), "..", "..", "assets", "audio", "background_music.ogg"
+)
+
+# 開始畫面背景圖（程序繪製產生，見 assets/images/README.md）。
+MENU_BACKGROUND_PATH = os.path.join(
+    os.path.dirname(__file__), "..", "..", "assets", "images", "menu_background.png"
+)
 
 
 class Screen(Enum):
     MENU = auto()
     SETTINGS = auto()
     PLAYING = auto()
+
+
+def _start_background_music(settings: Settings) -> None:
+    """載入並循環播放背景音樂；找不到音效裝置或音檔時靜默略過。"""
+    if not pygame.mixer.get_init() or not os.path.isfile(MUSIC_PATH):
+        return
+    try:
+        pygame.mixer.music.load(MUSIC_PATH)
+        pygame.mixer.music.set_volume(settings.music_volume_ratio)
+        pygame.mixer.music.play(loops=-1)
+    except pygame.error:
+        pass
 
 
 def _pos_from_mouse(mouse_pos: tuple) -> tuple:
@@ -34,8 +58,24 @@ def _status_text(game: Game) -> str:
     return f"Chess Game - 輪到{turn_name}走棋（按 R 重新開始，Esc 回主選單）"
 
 
-def _draw_menu(screen, title_font, start_button, settings_button) -> None:
-    screen.fill(C.MENU_BACKGROUND_COLOR)
+def _load_menu_background() -> "pygame.Surface | None":
+    """載入開始畫面背景圖；找不到檔案時回傳 None，改用純色背景。"""
+    if not os.path.isfile(MENU_BACKGROUND_PATH):
+        return None
+    try:
+        image = pygame.image.load(MENU_BACKGROUND_PATH).convert()
+        if image.get_size() != (C.WINDOW_SIZE, C.WINDOW_SIZE):
+            image = pygame.transform.smoothscale(image, (C.WINDOW_SIZE, C.WINDOW_SIZE))
+        return image
+    except pygame.error:
+        return None
+
+
+def _draw_menu(screen, title_font, start_button, settings_button, background) -> None:
+    if background is not None:
+        screen.blit(background, (0, 0))
+    else:
+        screen.fill(C.MENU_BACKGROUND_COLOR)
 
     title_surface = title_font.render("CHESS", True, C.MENU_TITLE_COLOR)
     title_rect = title_surface.get_rect(center=(C.WINDOW_SIZE // 2, C.WINDOW_SIZE // 3))
@@ -45,20 +85,24 @@ def _draw_menu(screen, title_font, start_button, settings_button) -> None:
     settings_button.draw(screen)
 
 
-def _draw_settings(screen, title_font, label_font, volume_slider, back_button) -> None:
+def _draw_settings(
+    screen, title_font, label_font, music_slider, sfx_slider, back_button
+) -> None:
     screen.fill(C.MENU_BACKGROUND_COLOR)
 
     title_surface = title_font.render("設定", True, C.MENU_TITLE_COLOR)
     title_rect = title_surface.get_rect(center=(C.WINDOW_SIZE // 2, C.WINDOW_SIZE // 4))
     screen.blit(title_surface, title_rect)
 
-    label_surface = label_font.render(f"音量：{volume_slider.value}", True, C.BUTTON_TEXT_COLOR)
-    label_rect = label_surface.get_rect(
-        center=(C.WINDOW_SIZE // 2, volume_slider.rect.y - 36)
-    )
-    screen.blit(label_surface, label_rect)
+    for slider, text in (
+        (music_slider, f"音樂音量：{music_slider.value}"),
+        (sfx_slider, f"音效音量：{sfx_slider.value}"),
+    ):
+        label_surface = label_font.render(text, True, C.BUTTON_TEXT_COLOR)
+        label_rect = label_surface.get_rect(center=(C.WINDOW_SIZE // 2, slider.rect.y - 30))
+        screen.blit(label_surface, label_rect)
+        slider.draw(screen)
 
-    volume_slider.draw(screen)
     back_button.draw(screen)
 
 
@@ -70,6 +114,11 @@ def run() -> None:
 
     settings = Settings.load()
     settings.apply()
+    _start_background_music(settings)
+    menu_background = _load_menu_background()
+
+    sfx = SoundEffects()
+    sfx.set_volume(settings.sfx_volume_ratio)
 
     title_font = get_font(int(C.WINDOW_SIZE * 0.1), bold=True)
     label_font = get_font(26)
@@ -108,9 +157,13 @@ def run() -> None:
         "返回",
         button_font,
     )
-    volume_slider = Slider(
-        pygame.Rect(center_x - 160, C.WINDOW_SIZE // 2, 320, 18),
-        value=settings.volume,
+    music_slider = Slider(
+        pygame.Rect(center_x - 160, C.WINDOW_SIZE // 2 - 70, 320, 18),
+        value=settings.music_volume,
+    )
+    sfx_slider = Slider(
+        pygame.Rect(center_x - 160, C.WINDOW_SIZE // 2 + 40, 320, 18),
+        value=settings.sfx_volume,
     )
 
     renderer = Renderer(screen)
@@ -130,24 +183,35 @@ def run() -> None:
             if screen_state == Screen.MENU:
                 if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
                     if start_button.is_clicked(event.pos):
+                        sfx.play_click()
                         game = Game()
                         selected_pos, legal_targets = None, []
                         screen_state = Screen.PLAYING
                     elif settings_button.is_clicked(event.pos):
+                        sfx.play_click()
                         screen_state = Screen.SETTINGS
 
             elif screen_state == Screen.SETTINGS:
-                volume_slider.handle_event(event)
-                if volume_slider.value != settings.volume:
-                    settings.volume = volume_slider.value
+                music_slider.handle_event(event)
+                if music_slider.value != settings.music_volume:
+                    settings.music_volume = music_slider.value
                     settings.apply()
                     settings.save()
+
+                sfx_slider.handle_event(event)
+                if sfx_slider.value != settings.sfx_volume:
+                    settings.sfx_volume = sfx_slider.value
+                    sfx.set_volume(settings.sfx_volume_ratio)
+                    settings.save()
+
                 if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
                     if back_button.is_clicked(event.pos):
+                        sfx.play_click()
                         screen_state = Screen.MENU
 
             elif screen_state == Screen.PLAYING:
                 if event.type == pygame.KEYDOWN and event.key == pygame.K_r:
+                    sfx.play_restart()
                     game = Game()
                     selected_pos, legal_targets = None, []
                 elif event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
@@ -166,6 +230,9 @@ def run() -> None:
                         # 之後可擴充成彈出選單讓玩家自行選擇。
                         game.make_move(selected_pos, clicked_pos)
                         selected_pos, legal_targets = None, []
+                        sfx.play_move()
+                        if game.is_game_over():
+                            sfx.play_game_over()
                     else:
                         piece = game.board.get_piece(clicked_pos)
                         if piece is not None and piece.color is game.turn:
@@ -177,10 +244,10 @@ def run() -> None:
                             selected_pos, legal_targets = None, []
 
         if screen_state == Screen.MENU:
-            _draw_menu(screen, title_font, start_button, settings_button)
+            _draw_menu(screen, title_font, start_button, settings_button, menu_background)
             pygame.display.set_caption("Chess Game - 主選單")
         elif screen_state == Screen.SETTINGS:
-            _draw_settings(screen, title_font, label_font, volume_slider, back_button)
+            _draw_settings(screen, title_font, label_font, music_slider, sfx_slider, back_button)
             pygame.display.set_caption("Chess Game - 設定")
         else:
             renderer.draw_board()

@@ -48,9 +48,30 @@ flake8 .
   `legal_moves_for(pos)`、`make_move(from_pos, to_pos)`、
   `is_game_over()` 等介面，並管理走棋歷史與遊戲狀態
   （進行中 / 將死 / 逼和）。
-- `chess_game/gui/`：Pygame 圖形介面。`renderer.py` 負責繪製棋盤與棋子
-  （若 `assets/images/` 無對應圖片，會退回畫圓圈+字母的佔位圖形）；
-  `app.py` 負責事件迴圈與滑鼠點擊選子/走棋的互動邏輯。
+- `chess_game/settings.py`：`Settings` 類別，管理音樂音量（`music_volume`）與
+  音效音量（`sfx_volume`），存讀取於專案根目錄的 `settings.json`
+  （執行期自動產生，已加入 `.gitignore`、不納入版本控制）。
+- `chess_game/gui/`：Pygame 圖形介面。
+  - `app.py`：主迴圈與畫面狀態機（`Screen.MENU` / `SETTINGS` / `PLAYING`），
+    負責開始畫面、設定畫面、棋盤事件（滑鼠選子走棋、`R` 重新開始、
+    `Esc` 回主選單）、背景音樂與音效播放時機的串接。
+  - `renderer.py`：繪製棋盤與棋子（若 `assets/images/` 無對應圖片，
+    會退回畫圓圈+字母的佔位圖形）。
+  - `fonts.py`：`get_font()`，依序嘗試系統中文字型（微軟正黑體等），
+    避免預設 Arial 字型顯示中文時變成方框亂碼。
+  - `screens.py`：選單／設定畫面共用的 `Button`、`Slider` UI 元件。
+  - `sound_effects.py`：`SoundEffects` 類別，載入並播放四種音效
+    （按鈕、走棋、重新開始、棋局結束）。
+
+## 素材與授權
+
+- `assets/images/menu_background.png`：開始畫面背景圖，由 Pygame 繪圖指令
+  程序繪製產生（原創，非外部素材），細節見同目錄 `README.md`。
+- `assets/audio/background_music.ogg`：背景音樂；`assets/audio/sfx/`：
+  按鈕、走棋、重新開始、棋局結束四種音效。皆為 **CC0（公有領域）** 授權的
+  外部素材，來源與作者標註於各自目錄的 `README.md`。
+- 慣例：新增音樂/圖片等外部素材時，優先選擇 CC0 授權，並在同目錄
+  `README.md` 記錄來源網址、作者與授權條款，方便日後追溯與替換。
 
 ## 座標系統
 
@@ -68,6 +89,11 @@ flake8 .
 - 將軍 / 將死 / 逼和偵測
 - Pygame 圖形介面（點擊選子、顯示可走格提示）
 - 命令列文字介面（輸入如 `e2e4` 的走法）
+- 開始畫面（標題 CHESS、「進入遊戲」／「設定」按鈕、程序繪製的背景封面圖）
+- 設定畫面（音樂音量、音效音量各自獨立滑桿，即時套用並存檔）
+- 背景音樂（開始畫面啟動時自動循環播放，CC0 素材）
+- 音效（按鈕、走棋、重新開始、棋局結束，CC0 素材）
+- 中文字型顯示修正（選單/設定畫面文字改用系統中文字型，避免亂碼）
 - 基礎單元測試（`tests/`）
 
 ## 待辦（TODO）/ 可擴充方向
