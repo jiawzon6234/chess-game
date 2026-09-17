@@ -5,7 +5,10 @@
 ## 專案概述
 
 Python + Pygame 開發的西洋棋遊戲。棋規邏輯（走法、將軍、將死、逼和、易位、
-吃過路兵、兵升變）完全從零實作，未使用 `python-chess` 等現成套件。
+吃過路兵、兵升變）完全從零實作，未使用 `python-chess` 等現成套件。電腦
+對手則是透過標準 UCI 協定（純文字指令，stdin/stdout）驅動外部的
+Stockfish 引擎子程序（見 `chess_game/engine.py`），與「規則邏輯從零實作」
+的原則並不衝突——串接的只是走法搜尋演算法，不是棋規判斷。
 
 ## 常用開發指令
 
@@ -68,23 +71,52 @@ flake8 .
   寫「unlimited」分支；只有 GUI 端格式化剩餘時間文字時需要特別處理
   （`int(inf)` 會丟 `OverflowError`，見 `gui/app.py` 的
   `_format_clock_time`，顯示為 `∞`）。
+- `chess_game/engine.py`：`UciEngine` 類別，用 `subprocess` 啟動 UCI 引擎
+  （預設 `engines/stockfish/stockfish.exe`，執行檔不納入版本控制、需
+  自行安裝，見 `engines/README.md`）並用純文字指令溝通：握手
+  （`uci`/`isready`）、設定難度（`setoption name Skill Level`）、
+  查詢最佳走法（`position startpos moves ...` + `go movetime N` →
+  解析 `bestmove` 回應）。找不到執行檔或程序中斷時拋出 `EngineError`，
+  由呼叫端（`gui/app.py`）決定如何處理（停留在設定畫面顯示錯誤，不會
+  讓遊戲崩潰）。純邏輯層、不依賴 pygame，方便單元測試；測試（見
+  `tests/test_engine.py`）在偵測不到本機引擎執行檔時會自動略過
+  （`pytest.mark.skipif`），CI/其他開發者電腦沒裝 Stockfish 也不會
+  導致測試失敗。
 - `chess_game/settings.py`：`Settings` 類別，管理音樂音量（`music_volume`）與
   音效音量（`sfx_volume`），存讀取於專案根目錄的 `settings.json`
   （執行期自動產生，已加入 `.gitignore`、不納入版本控制）。
 - `chess_game/gui/`：Pygame 圖形介面。
   - `app.py`：主迴圈與畫面狀態機（`Screen.MENU` / `SETTINGS` /
     `GAME_OPTIONS` / `PLAYING`），負責開始畫面、設定畫面、**對局設定
-    畫面**（按下「進入遊戲」後顯示；選持棋時間 5 分鐘/15 分鐘/無限制、
-    以及是否允許悔棋的開關——悔棋開啟時會強制持棋時間為無限制、且把
-    三個時間按鈕畫成 `disabled` 樣式，關閉悔棋後才恢復可選；玩家先前
-    選過的時間選項會保留，關閉悔棋時自動還原）、棋盤事件（滑鼠選子
-    走棋、`R` 重新開始、`Ctrl+Z` 悔棋——僅在該局開啟悔棋時生效、`Esc`
-    回主選單）、兵升變彈出選擇視窗、背景音樂與音效播放時機的串接。
+    畫面**（按下「進入遊戲」後顯示；選對戰模式「人 vs 人」/「人 vs
+    電腦」——選人機對戰才會另外顯示先後手與電腦難度兩排選項；持棋時間
+    5 分鐘/15 分鐘/無限制；是否允許悔棋——悔棋開啟時會強制持棋時間為
+    無限制、且把三個時間按鈕畫成 `disabled` 樣式，關閉悔棋後才恢復
+    可選，玩家先前選過的時間選項會保留）、棋盤事件（滑鼠選子走棋、
+    `R` 重新開始、`Ctrl+Z` 悔棋——僅在該局開啟悔棋時生效、`Esc` 回主
+    選單）、兵升變彈出選擇視窗、背景音樂與音效播放時機的串接。
     `R` 重新開始會沿用 `game.clock.time_limit_seconds` 重新建立
     `Game`（不會回到對局設定畫面）；`active_undo_enabled` 記錄目前這
     局是否允許悔棋（`Game` 本身不知道這個概念，純粹是 UI 層策略）。
     新開局/重新開始/悔棋後會設定 `skip_next_tick`，避免把切換畫面
     當下經過的時間誤算進西洋棋鐘。
+    - **人機對戰**：`active_vs_computer`/`active_ai_color` 記錄目前這局
+      是否為人機對戰、電腦執哪一色（`Game`/`ChessClock` 同樣不知道這個
+      概念）。對局設定畫面按「開始對局」時才真正建立 `UciEngine`
+      （依選擇的難度設定 `skill_level`/`movetime_ms`），啟動失敗會
+      設定 `game_options_error` 並停留在設定畫面。輪到電腦走棋時設
+      `pending_ai_move = True`；下一次繪製 PLAYING 畫面時，若此旗標
+      為真，會先畫出「電腦思考中…」半透明遮罩並呼叫一次
+      `pygame.display.flip()`，**再**呼叫會阻塞的
+      `engine.best_move(game.moves_as_algebraic())`（`Game.moves_as_
+      algebraic()` 產生的走法字串本來就是 UCI 記譜，可直接餵給引擎），
+      透過 `_parse_uci_move()` 解析回傳字串成 `(from_pos, to_pos,
+      promotion)` 後呼叫 `game.make_move()`。這種「先渲染再阻塞」的
+      安排是為了讓玩家在電腦思考的 0.3~1.5 秒內看到提示，而不是讓
+      視窗看起來像當掉；沒有另外開執行緒。離開對局（`Esc`）、
+      `R` 重新開始（沿用同一顆引擎、呼叫 `engine.new_game()`）、或
+      程式結束時都會呼叫 `_stop_engine()` 結束引擎子程序，避免留下
+      孤兒程序。
     - **版面**：選單/設定/棋盤內容統一畫在一張置中的 `content`
       （`WINDOW_SIZE x WINDOW_SIZE`）畫布上，再貼到實際視窗的中央；
       左右兩側留白區直接畫在真正的 `screen` 上，顯示黑方鐘（左上角，
@@ -115,6 +147,10 @@ flake8 .
   外部素材，來源與作者標註於各自目錄的 `README.md`。
 - 慣例：新增音樂/圖片等外部素材時，優先選擇 CC0 授權，並在同目錄
   `README.md` 記錄來源網址、作者與授權條款，方便日後追溯與替換。
+- `engines/stockfish/stockfish.exe`：Stockfish 引擎執行檔，**GPL-3.0**
+  授權、完全開源；體積過大（100MB+）不納入版本控制，需依
+  `engines/README.md` 自行下載安裝。專案程式碼只透過 UCI 文字協定與其
+  子程序溝通，未修改或重新散布 Stockfish 原始碼。
 
 ## 座標系統
 
@@ -144,18 +180,24 @@ flake8 .
   也可悔掉導致將死/和局/超時的最後一步）
 - 西洋棋鐘計時器（GUI 限定；剩餘 ≤30 秒轉紅色警示；持棋時間歸零
   自動判負）
-- 對局設定畫面（按「進入遊戲」後顯示）：可選持棋時間 5 分鐘／15 分鐘／
-  無限制，以及是否允許悔棋的開關（開啟悔棋會自動鎖定為無限制時間）
+- 對局設定畫面（按「進入遊戲」後顯示）：對戰模式（人 vs 人／人 vs
+  電腦）、持棋時間 5 分鐘／15 分鐘／無限制，以及是否允許悔棋的開關
+  （開啟悔棋會自動鎖定為無限制時間）
+- AI 電腦對手（人 vs 電腦模式）：透過 UCI 協定驅動外部 Stockfish 引擎
+  子程序，可選先後手與難度（簡單/普通/困難，對應 Skill Level 與思考
+  時間）；找不到引擎執行檔時設定畫面會顯示錯誤訊息、不影響人 vs 人
+  模式
 - 對局畫面兩側黑色留白區：黑方鐘（左上角）、白方鐘（右下角）、
   快捷鍵提示（右上角，會依該局是否允許悔棋顯示/隱藏 Ctrl+Z 提示），
   棋盤內容置中不受遮擋
-- 基礎單元測試（`tests/`，含 `test_game.py`／`test_clock.py`
-  涵蓋上述和局規則、悔棋、西洋棋鐘與無限制時間）
+- 基礎單元測試（`tests/`，含 `test_game.py`／`test_clock.py`／
+  `test_engine.py`／`test_gui_helpers.py`，涵蓋上述和局規則、悔棋、
+  西洋棋鐘、無限制時間與 UCI 引擎溝通；引擎相關測試在偵測不到本機
+  Stockfish 執行檔時會自動略過）
 
 ## 待辦（TODO）/ 可擴充方向
 
 - 走棋紀錄輸出為 PGN
-- AI / 電腦對手（例如 minimax + alpha-beta 剪枝）
 
 ## 開發慣例
 

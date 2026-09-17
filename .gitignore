@@ -29,3 +29,8 @@ dist/
 
 # 執行期產生的個人化設定（音量等）
 settings.json
+
+# 西洋棋引擎（Stockfish 執行檔，體積過大不納入版本控制，需另外安裝）
+# 保留 engines/README.md 讓安裝說明可以進版本控制。
+engines/*
+!engines/README.md

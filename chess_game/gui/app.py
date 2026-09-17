@@ -7,8 +7,10 @@ from enum import Enum, auto
 import pygame
 
 from .. import constants as C
+from ..board import Board
+from ..engine import EngineError, UciEngine
 from ..game import Game, GameStatus
-from ..pieces import Color, PROMOTION_CHOICES
+from ..pieces import Color, PieceType, PROMOTION_CHOICES
 from ..settings import Settings
 from .fonts import get_font
 from .renderer import Renderer
@@ -35,6 +37,50 @@ class Screen(Enum):
 
 # 持棋時間選項：(顯示文字, 秒數)，None 代表無限制。
 TIME_LIMIT_OPTIONS = (("5 分鐘", 300), ("15 分鐘", 900), ("無限制", None))
+
+# 對戰模式：(顯示文字, 模式代碼)。
+GAME_MODE_OPTIONS = (("人 vs 人", "pvp"), ("人 vs 電腦", "pve"))
+
+# 先後手：(顯示文字, 玩家執子顏色)。
+HUMAN_COLOR_OPTIONS = (("先手（白方）", Color.WHITE), ("後手（黑方）", Color.BLACK))
+
+# 電腦難度：(顯示文字, {skill_level, movetime_ms})，對應 Stockfish 的
+# Skill Level（0~20）與思考時間，數字越大電腦越強。
+DIFFICULTY_OPTIONS = (
+    ("簡單", {"skill_level": 3, "movetime_ms": 300}),
+    ("普通", {"skill_level": 10, "movetime_ms": 800}),
+    ("困難", {"skill_level": 20, "movetime_ms": 1500}),
+)
+
+_UCI_PROMOTION_PIECE_TYPES = {
+    "q": PieceType.QUEEN,
+    "r": PieceType.ROOK,
+    "b": PieceType.BISHOP,
+    "n": PieceType.KNIGHT,
+}
+
+
+def _parse_uci_move(move_uci: str) -> tuple:
+    """把引擎回傳的 UCI 走法字串（如 'e2e4'、'e7e8q'）解析成
+    (from_pos, to_pos, promotion)。"""
+    from_pos = Board.square_to_pos(move_uci[0:2])
+    to_pos = Board.square_to_pos(move_uci[2:4])
+    promotion = _UCI_PROMOTION_PIECE_TYPES.get(move_uci[4]) if len(move_uci) >= 5 else None
+    return from_pos, to_pos, promotion
+
+
+# ---- 對局設定畫面的版面座標（同時供按鈕建立與標籤繪製使用）----
+_OPT_MODE_LABEL_Y = 118
+_OPT_MODE_BUTTON_Y, _OPT_MODE_BUTTON_H = 142, 48
+_OPT_COLOR_LABEL_Y = 222
+_OPT_COLOR_BUTTON_Y, _OPT_COLOR_BUTTON_H = 246, 44
+_OPT_DIFF_LABEL_Y = 318
+_OPT_DIFF_BUTTON_Y, _OPT_DIFF_BUTTON_H = 342, 44
+_OPT_TIME_LABEL_Y = 414
+_OPT_TIME_BUTTON_Y, _OPT_TIME_BUTTON_H = 438, 50
+_OPT_UNDO_LABEL_Y = 514
+_OPT_UNDO_BUTTON_Y, _OPT_UNDO_BUTTON_H = 536, 46
+_OPT_BOTTOM_BUTTON_Y, _OPT_BOTTOM_BUTTON_H = 632, 56
 
 
 def _start_background_music(settings: Settings) -> None:
@@ -195,26 +241,59 @@ def _draw_settings(
     back_button.draw(screen, mouse_pos)
 
 
+def _draw_option_row(screen, label_font, label_text, y, buttons, selected_value, mouse_pos) -> None:
+    """畫一列「標籤 + 一排可選按鈕」，buttons 為 [(value, Button), ...]。"""
+    label_surface = label_font.render(label_text, True, C.BUTTON_TEXT_COLOR)
+    label_rect = label_surface.get_rect(center=(C.WINDOW_SIZE // 2, y))
+    screen.blit(label_surface, label_rect)
+
+    for value, button in buttons:
+        button.draw(screen, mouse_pos, selected=value == selected_value)
+
+
 def _draw_game_options(
     screen,
-    title_font,
+    options_title_font,
     label_font,
+    mode_buttons,
+    color_buttons,
+    difficulty_buttons,
     time_buttons,
     undo_toggle_button,
     confirm_button,
     back_button,
+    selected_game_mode,
+    selected_human_color,
+    selected_difficulty_index,
     selected_time_limit_seconds,
     undo_enabled,
+    game_options_error,
     mouse_pos,
 ) -> None:
     screen.fill(C.MENU_BACKGROUND_COLOR)
+    vs_computer = selected_game_mode == "pve"
 
-    title_surface = title_font.render("對局設定", True, C.MENU_TITLE_COLOR)
-    title_rect = title_surface.get_rect(center=(C.WINDOW_SIZE // 2, 130))
+    title_surface = options_title_font.render("對局設定", True, C.MENU_TITLE_COLOR)
+    title_rect = title_surface.get_rect(center=(C.WINDOW_SIZE // 2, 60))
     screen.blit(title_surface, title_rect)
 
+    _draw_option_row(
+        screen, label_font, "對戰模式", _OPT_MODE_LABEL_Y, mode_buttons, selected_game_mode,
+        mouse_pos,
+    )
+
+    if vs_computer:
+        _draw_option_row(
+            screen, label_font, "先後手", _OPT_COLOR_LABEL_Y, color_buttons,
+            selected_human_color, mouse_pos,
+        )
+        _draw_option_row(
+            screen, label_font, "電腦難度", _OPT_DIFF_LABEL_Y, difficulty_buttons,
+            selected_difficulty_index, mouse_pos,
+        )
+
     time_label = label_font.render("持棋時間", True, C.BUTTON_TEXT_COLOR)
-    time_label_rect = time_label.get_rect(center=(C.WINDOW_SIZE // 2, 225))
+    time_label_rect = time_label.get_rect(center=(C.WINDOW_SIZE // 2, _OPT_TIME_LABEL_Y))
     screen.blit(time_label, time_label_rect)
 
     for seconds, button in time_buttons:
@@ -222,19 +301,31 @@ def _draw_game_options(
         button.draw(screen, mouse_pos, selected=is_selected, disabled=undo_enabled)
 
     undo_label = label_font.render("允許悔棋", True, C.BUTTON_TEXT_COLOR)
-    undo_label_rect = undo_label.get_rect(center=(C.WINDOW_SIZE // 2, 375))
+    undo_label_rect = undo_label.get_rect(center=(C.WINDOW_SIZE // 2, _OPT_UNDO_LABEL_Y))
     screen.blit(undo_label, undo_label_rect)
 
     undo_toggle_button.text = "開" if undo_enabled else "關"
     undo_toggle_button.draw(screen, mouse_pos, selected=undo_enabled)
 
-    if undo_enabled:
+    # 錯誤訊息與悔棋提示只會擇一顯示（都放在同一行位置），避免兩行文字
+    # 疊在一起、甚至蓋到下方的返回/開始對局按鈕。錯誤訊息優先顯示。
+    note_y = undo_toggle_button.rect.bottom + 20
+    if game_options_error:
+        error_surface = label_font.render(game_options_error, True, C.CLOCK_LOW_TIME_COLOR)
+        max_width = C.WINDOW_SIZE - 40
+        if error_surface.get_width() > max_width:
+            scale = max_width / error_surface.get_width()
+            error_surface = pygame.transform.smoothscale(
+                error_surface,
+                (max_width, max(1, int(error_surface.get_height() * scale))),
+            )
+        error_rect = error_surface.get_rect(center=(C.WINDOW_SIZE // 2, note_y))
+        screen.blit(error_surface, error_rect)
+    elif undo_enabled:
         note_surface = label_font.render(
             "（悔棋開啟時，持棋時間自動設為無限制）", True, C.HINT_TEXT_COLOR
         )
-        note_rect = note_surface.get_rect(
-            center=(C.WINDOW_SIZE // 2, undo_toggle_button.rect.bottom + 26)
-        )
+        note_rect = note_surface.get_rect(center=(C.WINDOW_SIZE // 2, note_y))
         screen.blit(note_surface, note_rect)
 
     back_button.draw(screen, mouse_pos)
@@ -273,6 +364,27 @@ def _draw_promotion_popup(screen, renderer, label_font, color, promotion_rects, 
         screen.blit(icon, icon_rect)
 
 
+def _draw_ai_thinking_overlay(screen, label_font) -> None:
+    overlay = pygame.Surface((C.WINDOW_SIZE, C.WINDOW_SIZE), pygame.SRCALPHA)
+    overlay.fill((0, 0, 0, 90))
+    screen.blit(overlay, (0, 0))
+
+    text_surface = label_font.render("電腦思考中…", True, C.BUTTON_TEXT_COLOR)
+    text_rect = text_surface.get_rect(center=(C.WINDOW_SIZE // 2, C.WINDOW_SIZE // 2))
+    panel_rect = text_rect.inflate(56, 32)
+    pygame.draw.rect(screen, C.BUTTON_COLOR, panel_rect, border_radius=14)
+    pygame.draw.rect(screen, C.BUTTON_TEXT_COLOR, panel_rect, 2, border_radius=14)
+    screen.blit(text_surface, text_rect)
+
+
+def _stop_engine(engine: "UciEngine | None") -> None:
+    if engine is not None:
+        try:
+            engine.quit()
+        except Exception:
+            pass
+
+
 def run() -> None:
     pygame.init()
     pygame.display.set_caption("Chess Game")
@@ -294,6 +406,7 @@ def run() -> None:
     button_font = get_font(28, bold=True)
     clock_font = get_font(34, bold=True)
     tiny_font = get_font(18)
+    options_title_font = get_font(46, bold=True)
 
     center_x = C.WINDOW_SIZE // 2
     button_width, button_height = 260, 64
@@ -339,55 +452,75 @@ def run() -> None:
 
     option_button_font = get_font(22, bold=True)
 
-    time_button_width, time_button_height, time_button_gap = 150, 56, 20
-    time_buttons_total_width = len(TIME_LIMIT_OPTIONS) * time_button_width + (
-        len(TIME_LIMIT_OPTIONS) - 1
-    ) * time_button_gap
-    time_buttons_start_x = center_x - time_buttons_total_width // 2
-    time_buttons = [
-        (
-            seconds,
-            Button(
-                pygame.Rect(
-                    time_buttons_start_x + i * (time_button_width + time_button_gap),
-                    260,
-                    time_button_width,
-                    time_button_height,
+    def _build_option_row(options, y, height, font=option_button_font):
+        """依 (顯示文字, 值) 列表建立一排等寬、置中排列的 Button，回傳 [(值, Button), ...]。"""
+        width = max(140, min(190, (C.WINDOW_SIZE - 80) // len(options) - 16))
+        gap = 16
+        total_width = len(options) * width + (len(options) - 1) * gap
+        start_x = center_x - total_width // 2
+        return [
+            (
+                value,
+                Button(
+                    pygame.Rect(start_x + i * (width + gap), y, width, height),
+                    text,
+                    font,
                 ),
-                text,
-                option_button_font,
-            ),
-        )
-        for i, (text, seconds) in enumerate(TIME_LIMIT_OPTIONS)
-    ]
+            )
+            for i, (text, value) in enumerate(options)
+        ]
+
+    mode_buttons = _build_option_row(
+        GAME_MODE_OPTIONS, _OPT_MODE_BUTTON_Y, _OPT_MODE_BUTTON_H
+    )
+    color_buttons = _build_option_row(
+        HUMAN_COLOR_OPTIONS, _OPT_COLOR_BUTTON_Y, _OPT_COLOR_BUTTON_H
+    )
+    difficulty_buttons = _build_option_row(
+        [(text, i) for i, (text, _settings) in enumerate(DIFFICULTY_OPTIONS)],
+        _OPT_DIFF_BUTTON_Y,
+        _OPT_DIFF_BUTTON_H,
+    )
+    time_buttons = _build_option_row(
+        TIME_LIMIT_OPTIONS, _OPT_TIME_BUTTON_Y, _OPT_TIME_BUTTON_H
+    )
 
     undo_toggle_button = Button(
-        pygame.Rect(center_x - 70, 410, 140, 56),
+        pygame.Rect(center_x - 70, _OPT_UNDO_BUTTON_Y, 140, _OPT_UNDO_BUTTON_H),
         "關",
         option_button_font,
     )
 
-    options_bottom_width, options_bottom_height, options_bottom_gap = 200, 64, 24
+    options_bottom_width, options_bottom_gap = 200, 24
     options_bottom_total_width = options_bottom_width * 2 + options_bottom_gap
     options_bottom_start_x = center_x - options_bottom_total_width // 2
     options_back_button = Button(
-        pygame.Rect(options_bottom_start_x, 580, options_bottom_width, options_bottom_height),
+        pygame.Rect(
+            options_bottom_start_x,
+            _OPT_BOTTOM_BUTTON_Y,
+            options_bottom_width,
+            _OPT_BOTTOM_BUTTON_H,
+        ),
         "返回",
         button_font,
     )
     confirm_button = Button(
         pygame.Rect(
             options_bottom_start_x + options_bottom_width + options_bottom_gap,
-            580,
+            _OPT_BOTTOM_BUTTON_Y,
             options_bottom_width,
-            options_bottom_height,
+            _OPT_BOTTOM_BUTTON_H,
         ),
         "開始對局",
         button_font,
     )
 
+    selected_game_mode = "pvp"
+    selected_human_color = Color.WHITE
+    selected_difficulty_index = 1  # 預設「普通」
     selected_time_limit_seconds = 300
     undo_enabled = False
+    game_options_error = None
 
     promotion_icon_size = 72
     promotion_gap = 14
@@ -409,6 +542,10 @@ def run() -> None:
     renderer = Renderer(content)
     game = Game()
     active_undo_enabled = False  # 目前這局是否允許悔棋，由對局設定畫面決定
+    active_vs_computer = False  # 目前這局是否為人機對戰
+    active_ai_color = None  # 電腦執子顏色（None 表示非人機對戰）
+    engine = None  # 目前使用中的 UciEngine（僅人機對戰時存在）
+    pending_ai_move = False  # 輪到電腦走棋、尚未取得引擎回應
     selected_pos = None
     legal_targets = []
     pending_promotion = None
@@ -472,12 +609,40 @@ def run() -> None:
                                 time_option_clicked = True
                                 break
 
+                    clicked_mode = next(
+                        (mode for mode, btn in mode_buttons if btn.is_clicked(event.pos)), None
+                    )
+                    clicked_color = None
+                    clicked_difficulty_index = None
+                    if selected_game_mode == "pve":
+                        clicked_color = next(
+                            (c for c, btn in color_buttons if btn.is_clicked(event.pos)), None
+                        )
+                        clicked_difficulty_index = next(
+                            (i for i, btn in difficulty_buttons if btn.is_clicked(event.pos)),
+                            None,
+                        )
+
                     if time_option_clicked:
                         sfx.play_click()
                         selected_time_limit_seconds = clicked_time_option
+                        game_options_error = None
+                    elif clicked_mode is not None:
+                        sfx.play_click()
+                        selected_game_mode = clicked_mode
+                        game_options_error = None
+                    elif clicked_color is not None:
+                        sfx.play_click()
+                        selected_human_color = clicked_color
+                        game_options_error = None
+                    elif clicked_difficulty_index is not None:
+                        sfx.play_click()
+                        selected_difficulty_index = clicked_difficulty_index
+                        game_options_error = None
                     elif undo_toggle_button.is_clicked(event.pos):
                         sfx.play_click()
                         undo_enabled = not undo_enabled
+                        game_options_error = None
                     elif options_back_button.is_clicked(event.pos):
                         sfx.play_click()
                         screen_state = Screen.MENU
@@ -487,20 +652,48 @@ def run() -> None:
                             effective_time_limit = float("inf")
                         else:
                             effective_time_limit = selected_time_limit_seconds
-                        game = Game(time_limit_seconds=effective_time_limit)
-                        active_undo_enabled = undo_enabled
-                        selected_pos, legal_targets = None, []
-                        pending_promotion = None
-                        skip_next_tick = True
-                        screen_state = Screen.PLAYING
+
+                        vs_computer = selected_game_mode == "pve"
+                        new_engine = None
+                        engine_start_failed = False
+                        if vs_computer:
+                            difficulty = DIFFICULTY_OPTIONS[selected_difficulty_index][1]
+                            try:
+                                new_engine = UciEngine(
+                                    skill_level=difficulty["skill_level"],
+                                    movetime_ms=difficulty["movetime_ms"],
+                                )
+                            except EngineError as exc:
+                                game_options_error = str(exc)
+                                engine_start_failed = True
+
+                        if engine_start_failed:
+                            pass  # 引擎啟動失敗，停留在設定畫面讓玩家看到錯誤訊息
+                        else:
+                            _stop_engine(engine)
+                            engine = new_engine
+                            game = Game(time_limit_seconds=effective_time_limit)
+                            active_undo_enabled = undo_enabled
+                            active_vs_computer = vs_computer
+                            active_ai_color = (
+                                selected_human_color.opposite if vs_computer else None
+                            )
+                            selected_pos, legal_targets = None, []
+                            pending_promotion = None
+                            skip_next_tick = True
+                            pending_ai_move = vs_computer and active_ai_color is Color.WHITE
+                            screen_state = Screen.PLAYING
 
             elif screen_state == Screen.PLAYING:
                 if event.type == pygame.KEYDOWN and event.key == pygame.K_r:
                     sfx.play_restart()
                     game = Game(time_limit_seconds=game.clock.time_limit_seconds)
+                    if active_vs_computer and engine is not None:
+                        engine.new_game()
                     selected_pos, legal_targets = None, []
                     pending_promotion = None
                     skip_next_tick = True
+                    pending_ai_move = active_vs_computer and active_ai_color is Color.WHITE
                 elif (
                     event.type == pygame.KEYDOWN
                     and event.key == pygame.K_z
@@ -510,10 +703,20 @@ def run() -> None:
                         sfx.play_move()
                         selected_pos, legal_targets = None, []
                         skip_next_tick = True
+                        pending_ai_move = (
+                            active_vs_computer
+                            and not game.is_game_over()
+                            and game.turn is active_ai_color
+                        )
                 elif event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
                     if pending_promotion is not None:
                         pending_promotion = None
                     else:
+                        _stop_engine(engine)
+                        engine = None
+                        active_vs_computer = False
+                        active_ai_color = None
+                        pending_ai_move = False
                         screen_state = Screen.MENU
                 elif (
                     event.type == pygame.MOUSEBUTTONDOWN
@@ -539,6 +742,8 @@ def run() -> None:
                             sfx.play_move()
                             if game.is_game_over():
                                 sfx.play_game_over()
+                            elif active_vs_computer and game.turn is active_ai_color:
+                                pending_ai_move = True
                         # 點擊視窗以外的地方視同取消這次升變選擇
                         pending_promotion = None
                         continue
@@ -564,6 +769,8 @@ def run() -> None:
                             sfx.play_move()
                             if game.is_game_over():
                                 sfx.play_game_over()
+                            elif active_vs_computer and game.turn is active_ai_color:
+                                pending_ai_move = True
                         selected_pos, legal_targets = None, []
                     else:
                         piece = game.board.get_piece(clicked_pos)
@@ -596,14 +803,21 @@ def run() -> None:
         elif screen_state == Screen.GAME_OPTIONS:
             _draw_game_options(
                 content,
-                title_font,
+                options_title_font,
                 label_font,
+                mode_buttons,
+                color_buttons,
+                difficulty_buttons,
                 time_buttons,
                 undo_toggle_button,
                 confirm_button,
                 options_back_button,
+                selected_game_mode,
+                selected_human_color,
+                selected_difficulty_index,
                 selected_time_limit_seconds,
                 undo_enabled,
+                game_options_error,
                 content_mouse_pos,
             )
             pygame.display.set_caption("Chess Game - 對局設定")
@@ -639,7 +853,26 @@ def run() -> None:
             _draw_white_clock(screen, clock_font, tiny_font, game)
             _draw_shortcut_hints(screen, tiny_font, active_undo_enabled)
 
+            if pending_ai_move and engine is not None and not game.is_game_over():
+                # 先把「電腦思考中」畫面呈現出來，再進行會阻塞的引擎運算，
+                # 避免視窗看起來像當掉。
+                _draw_ai_thinking_overlay(content, label_font)
+                screen.blit(content, (C.SIDE_MARGIN_WIDTH, 0))
+                pygame.display.flip()
+
+                try:
+                    move_uci = engine.best_move(game.moves_as_algebraic())
+                    from_pos, to_pos, promotion = _parse_uci_move(move_uci)
+                    game.make_move(from_pos, to_pos, promotion=promotion)
+                    sfx.play_move()
+                    if game.is_game_over():
+                        sfx.play_game_over()
+                except EngineError:
+                    pass  # 引擎溝通失敗，維持目前局面，讓玩家可自行操作
+                pending_ai_move = False
+
         pygame.display.flip()
 
+    _stop_engine(engine)
     pygame.quit()
     sys.exit()

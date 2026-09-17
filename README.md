@@ -2,7 +2,9 @@
 
 使用 Python + Pygame 開發的西洋棋遊戲。棋盤規則（走法、將軍、將死、逼和、
 易位、吃過路兵、兵升變）皆為從零實作，未依賴 `python-chess` 等現成套件，
-方便深入理解與自由客製化規則邏輯。
+方便深入理解與自由客製化規則邏輯。電腦對手則是透過標準 UCI 協定串接
+獨立的 [Stockfish](https://stockfishchess.org/) 引擎子程序（見下方「安裝
+Stockfish」），棋規邏輯本身仍完全是本專案自己實作的。
 
 本專案預計搭配 **VS Code** 與 **Claude Code** 進行開發（詳見 `CLAUDE.md`）。
 
@@ -19,9 +21,16 @@
 - 悔棋（undo）：GUI 按 `Ctrl+Z`、CLI 輸入 `undo`，可連續悔多步，
   即使已將死/和局/超時也能悔回上一步
 - 西洋棋鐘計時器（GUI）：剩餘 30 秒內轉紅色警示，持棋時間歸零自動判負
-- 對局設定畫面（按「進入遊戲」後顯示）：選擇持棋時間（5 分鐘／
-  15 分鐘／無限制），以及是否允許悔棋的開關——開啟悔棋會自動把持棋
-  時間鎖定為無限制
+- 對局設定畫面（按「進入遊戲」後顯示）：
+  - 對戰模式：人 vs 人 或人 vs 電腦
+  - 選「人 vs 電腦」時會另外出現：先後手（先手白方／後手黑方）、
+    電腦難度（簡單／普通／困難，對應 Stockfish 的 Skill Level 與
+    思考時間）
+  - 持棋時間（5 分鐘／15 分鐘／無限制），以及是否允許悔棋的開關——
+    開啟悔棋會自動把持棋時間鎖定為無限制
+- 電腦對手（人 vs 電腦模式）：透過 UCI 協定驅動獨立的 Stockfish 引擎
+  子程序；電腦思考時會顯示「電腦思考中…」提示，若找不到引擎執行檔
+  會在設定畫面顯示錯誤訊息，不影響人 vs 人模式正常使用
 - 對局畫面左右黑色留白區：黑方鐘顯示於左上角、白方鐘顯示於右下角、
   快捷鍵提示顯示於右上角，棋盤置中不被遮擋
 - 正式棋子美術素材（CC0 授權，取代圓圈+字母佔位圖形）
@@ -53,6 +62,20 @@ pip install -r requirements-dev.txt
 pip install -r requirements.txt
 ```
 
+## 安裝 Stockfish（人機對戰用，選用）
+
+「人 vs 電腦」模式需要另外安裝 [Stockfish](https://stockfishchess.org/) 引擎
+執行檔（體積較大，不隨本專案的 Git 版本控制提供）：
+
+1. 到 [Stockfish 官方 GitHub Releases](https://github.com/official-stockfish/Stockfish/releases)
+   下載對應作業系統的版本（Windows 選 `stockfish-windows-x86-64-universal.zip`）。
+2. 解壓縮後把執行檔放到 `engines/stockfish/stockfish.exe`
+   （macOS/Linux 為 `engines/stockfish/stockfish`，並給予執行權限）。
+3. 詳細步驟與路徑說明見 `engines/README.md`。
+
+沒有安裝 Stockfish 也完全不影響「人 vs 人」模式；選擇「人 vs 電腦」但找不到
+引擎時，設定畫面會顯示錯誤訊息並停留在原畫面，不會讓程式崩潰。
+
 ## 執行遊戲
 
 ```bash
@@ -64,6 +87,7 @@ python main.py --mode cli
 ```
 
 啟動後會先看到開始畫面，點擊「進入遊戲」會先進入**對局設定畫面**：選擇
+對戰模式（人 vs 人／人 vs 電腦，選人機對戰會多出先後手與電腦難度選項）、
 持棋時間（5 分鐘／15 分鐘／無限制）與是否允許悔棋（開啟悔棋會自動把
 持棋時間鎖定為無限制、且無法再選其他時間），按「開始對局」才會真正進入
 棋盤。也可以點擊「設定」調整音樂／音效音量。
@@ -96,6 +120,7 @@ chess-game/
 │   ├── rules.py                    # 完整規則邏輯（將軍/將死/逼和、合法走法過濾）
 │   ├── game.py                       # Game 類別：整合以上模組、管理回合與遊戲狀態
 │   ├── clock.py                        # ChessClock：雙方倒數計時、超時判定
+│   ├── engine.py                        # UciEngine：透過 UCI 協定驅動 Stockfish 子程序
 │   ├── settings.py                     # 音樂/音效音量設定的載入、儲存與套用
 │   └── gui/
 │       ├── app.py                        # 主迴圈：開始/設定/對局設定/對局畫面狀態機、互動邏輯
@@ -106,6 +131,7 @@ chess-game/
 ├── assets/
 │   ├── images/                # 正式棋子圖片、開始畫面背景圖，見資料夾內 README
 │   └── audio/                 # 背景音樂與音效素材，見資料夾內 README
+├── engines/                  # Stockfish 執行檔（需自行安裝，不納入版本控制）
 ├── tests/                    # pytest 單元測試
 ├── requirements.txt          # 執行期套件
 ├── requirements-dev.txt      # 開發期套件（pytest / black / flake8）
@@ -115,7 +141,6 @@ chess-game/
 ## 待辦事項 / 未來可擴充方向
 
 - 走棋紀錄輸出為 PGN 格式
-- AI 電腦對手（例如 minimax + alpha-beta 剪枝）
 
 ## 授權
 
