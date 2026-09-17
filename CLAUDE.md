@@ -55,8 +55,8 @@ flake8 .
   - `app.py`：主迴圈與畫面狀態機（`Screen.MENU` / `SETTINGS` / `PLAYING`），
     負責開始畫面、設定畫面、棋盤事件（滑鼠選子走棋、`R` 重新開始、
     `Esc` 回主選單）、背景音樂與音效播放時機的串接。
-  - `renderer.py`：繪製棋盤與棋子（若 `assets/images/` 無對應圖片，
-    會退回畫圓圈+字母的佔位圖形）。
+  - `renderer.py`：繪製棋盤與棋子（讀取 `assets/images/` 內的正式棋子
+    圖片；若某檔案缺漏，該棋子會退回畫圓圈+字母的佔位圖形）。
   - `fonts.py`：`get_font()`，依序嘗試系統中文字型（微軟正黑體等），
     避免預設 Arial 字型顯示中文時變成方框亂碼。
   - `screens.py`：選單／設定畫面共用的 `Button`、`Slider` UI 元件。
@@ -67,6 +67,8 @@ flake8 .
 
 - `assets/images/menu_background.png`：開始畫面背景圖，由 Pygame 繪圖指令
   程序繪製產生（原創，非外部素材），細節見同目錄 `README.md`。
+- `assets/images/{w,b}{P,N,B,R,Q,K}.png`：正式棋子圖片，取材自 CC0 授權的
+  「2D Chess Pack」素材包並經去背處理，來源與處理方式見同目錄 `README.md`。
 - `assets/audio/background_music.ogg`：背景音樂；`assets/audio/sfx/`：
   按鈕、走棋、重新開始、棋局結束四種音效。皆為 **CC0（公有領域）** 授權的
   外部素材，來源與作者標註於各自目錄的 `README.md`。
@@ -94,6 +96,7 @@ flake8 .
 - 背景音樂（開始畫面啟動時自動循環播放，CC0 素材）
 - 音效（按鈕、走棋、重新開始、棋局結束，CC0 素材）
 - 中文字型顯示修正（選單/設定畫面文字改用系統中文字型，避免亂碼）
+- 正式棋子美術素材（取代圓圈+字母佔位圖形，CC0 素材）
 - 基礎單元測試（`tests/`）
 
 ## 待辦（TODO）/ 可擴充方向
@@ -102,7 +105,6 @@ flake8 .
 - 三次重複局面和局、50 手和局規則
 - 悔棋（undo）功能
 - 走棋紀錄輸出為 PGN
-- 正式棋子圖片素材（放入 `assets/images/`，檔名如 `wK.png`、`bQ.png`）
 - AI / 電腦對手（例如 minimax + alpha-beta 剪枝）
 - 西洋棋鐘計時器
 
