@@ -76,29 +76,58 @@ def _format_clock_time(seconds: float) -> str:
     return f"{minutes:02d}:{secs:02d}"
 
 
-def _draw_clock_bar(screen, label_font, game: Game) -> None:
-    bar = pygame.Surface((C.WINDOW_SIZE, C.CLOCK_BAR_HEIGHT), pygame.SRCALPHA)
-    bar.fill(C.CLOCK_BAR_COLOR)
-    screen.blit(bar, (0, 0))
+MARGIN_PADDING = 18
 
+
+def _clock_time_color(game: Game, color: Color) -> tuple:
+    remaining = game.clock.remaining[color]
     active_color = game.turn if not game.is_game_over() else None
-    entries = (
-        ("黑方", Color.BLACK, "midleft", (12, C.CLOCK_BAR_HEIGHT // 2)),
-        ("白方", Color.WHITE, "midright", (C.WINDOW_SIZE - 12, C.CLOCK_BAR_HEIGHT // 2)),
-    )
-    for label, color, anchor_name, anchor_pos in entries:
-        remaining = game.clock.remaining[color]
-        text = f"{label} {_format_clock_time(remaining)}"
-        if remaining <= C.CLOCK_LOW_TIME_THRESHOLD_SECONDS:
-            text_color = C.CLOCK_LOW_TIME_COLOR
-        elif color is active_color:
-            text_color = C.CLOCK_ACTIVE_TEXT_COLOR
-        else:
-            text_color = C.CLOCK_TEXT_COLOR
+    if remaining <= C.CLOCK_LOW_TIME_THRESHOLD_SECONDS:
+        return C.CLOCK_LOW_TIME_COLOR
+    if color is active_color:
+        return C.CLOCK_ACTIVE_TEXT_COLOR
+    return C.CLOCK_TEXT_COLOR
 
-        surface = label_font.render(text, True, text_color)
-        rect = surface.get_rect(**{anchor_name: anchor_pos})
+
+def _draw_black_clock(screen, clock_font, tiny_font, game: Game) -> None:
+    """黑方西洋棋鐘：畫在左側留白區的左上角。"""
+    label_surface = tiny_font.render("黑方", True, C.HINT_TITLE_COLOR)
+    label_rect = label_surface.get_rect(topleft=(MARGIN_PADDING, MARGIN_PADDING))
+    screen.blit(label_surface, label_rect)
+
+    time_text = _format_clock_time(game.clock.remaining[Color.BLACK])
+    time_surface = clock_font.render(time_text, True, _clock_time_color(game, Color.BLACK))
+    time_rect = time_surface.get_rect(topleft=(MARGIN_PADDING, label_rect.bottom + 4))
+    screen.blit(time_surface, time_rect)
+
+
+def _draw_white_clock(screen, clock_font, tiny_font, game: Game) -> None:
+    """白方西洋棋鐘：畫在右側留白區的右下角。"""
+    right_x = C.WINDOW_WIDTH - MARGIN_PADDING
+
+    time_text = _format_clock_time(game.clock.remaining[Color.WHITE])
+    time_surface = clock_font.render(time_text, True, _clock_time_color(game, Color.WHITE))
+    time_rect = time_surface.get_rect(bottomright=(right_x, C.WINDOW_HEIGHT - MARGIN_PADDING))
+    screen.blit(time_surface, time_rect)
+
+    label_surface = tiny_font.render("白方", True, C.HINT_TITLE_COLOR)
+    label_rect = label_surface.get_rect(bottomright=(right_x, time_rect.top - 4))
+    screen.blit(label_surface, label_rect)
+
+
+_SHORTCUT_LINES = ("快捷鍵", "R 重新開始", "Ctrl+Z 悔棋", "Esc 回主選單")
+
+
+def _draw_shortcut_hints(screen, tiny_font) -> None:
+    """快捷鍵提示：畫在右側留白區的右上角。"""
+    left_x = C.SIDE_MARGIN_WIDTH + C.WINDOW_SIZE + MARGIN_PADDING
+    y = MARGIN_PADDING
+    for i, line in enumerate(_SHORTCUT_LINES):
+        color = C.HINT_TITLE_COLOR if i == 0 else C.HINT_TEXT_COLOR
+        surface = tiny_font.render(line, True, color)
+        rect = surface.get_rect(topleft=(left_x, y))
         screen.blit(surface, rect)
+        y = rect.bottom + 6
 
 
 def _load_menu_background() -> "pygame.Surface | None":
@@ -114,7 +143,9 @@ def _load_menu_background() -> "pygame.Surface | None":
         return None
 
 
-def _draw_menu(screen, title_font, start_button, settings_button, background) -> None:
+def _draw_menu(
+    screen, title_font, start_button, settings_button, background, mouse_pos
+) -> None:
     if background is not None:
         screen.blit(background, (0, 0))
     else:
@@ -124,12 +155,12 @@ def _draw_menu(screen, title_font, start_button, settings_button, background) ->
     title_rect = title_surface.get_rect(center=(C.WINDOW_SIZE // 2, C.WINDOW_SIZE // 3))
     screen.blit(title_surface, title_rect)
 
-    start_button.draw(screen)
-    settings_button.draw(screen)
+    start_button.draw(screen, mouse_pos)
+    settings_button.draw(screen, mouse_pos)
 
 
 def _draw_settings(
-    screen, title_font, label_font, music_slider, sfx_slider, back_button
+    screen, title_font, label_font, music_slider, sfx_slider, back_button, mouse_pos
 ) -> None:
     screen.fill(C.MENU_BACKGROUND_COLOR)
 
@@ -146,10 +177,10 @@ def _draw_settings(
         screen.blit(label_surface, label_rect)
         slider.draw(screen)
 
-    back_button.draw(screen)
+    back_button.draw(screen, mouse_pos)
 
 
-def _draw_promotion_popup(screen, renderer, label_font, color, promotion_rects) -> None:
+def _draw_promotion_popup(screen, renderer, label_font, color, promotion_rects, mouse_pos) -> None:
     overlay = pygame.Surface((C.WINDOW_SIZE, C.WINDOW_SIZE), pygame.SRCALPHA)
     overlay.fill((0, 0, 0, 140))
     screen.blit(overlay, (0, 0))
@@ -170,7 +201,6 @@ def _draw_promotion_popup(screen, renderer, label_font, color, promotion_rects) 
     title_rect = title_surface.get_rect(centerx=panel_rect.centerx, top=panel_rect.top + 8)
     screen.blit(title_surface, title_rect)
 
-    mouse_pos = pygame.mouse.get_pos()
     for piece_type, rect in promotion_rects.items():
         hovered = rect.collidepoint(mouse_pos)
         bg_color = C.BUTTON_HOVER_COLOR if hovered else C.LIGHT_SQUARE_COLOR
@@ -185,7 +215,9 @@ def _draw_promotion_popup(screen, renderer, label_font, color, promotion_rects) 
 def run() -> None:
     pygame.init()
     pygame.display.set_caption("Chess Game")
-    screen = pygame.display.set_mode((C.WINDOW_SIZE, C.WINDOW_SIZE))
+    screen = pygame.display.set_mode((C.WINDOW_WIDTH, C.WINDOW_HEIGHT))
+    # 選單/設定/棋盤內容都畫在這張置中的正方形畫布上，兩側留白區直接畫在 screen 上。
+    content = pygame.Surface((C.WINDOW_SIZE, C.WINDOW_SIZE))
     clock = pygame.time.Clock()
 
     settings = Settings.load()
@@ -199,6 +231,8 @@ def run() -> None:
     title_font = get_font(int(C.WINDOW_SIZE * 0.1), bold=True)
     label_font = get_font(26)
     button_font = get_font(28, bold=True)
+    clock_font = get_font(34, bold=True)
+    tiny_font = get_font(18)
 
     center_x = C.WINDOW_SIZE // 2
     button_width, button_height = 260, 64
@@ -259,7 +293,7 @@ def run() -> None:
         for i, piece_type in enumerate(PROMOTION_CHOICES)
     }
 
-    renderer = Renderer(screen)
+    renderer = Renderer(content)
     game = Game()
     selected_pos = None
     legal_targets = []
@@ -276,6 +310,12 @@ def run() -> None:
             if event.type == pygame.QUIT:
                 running = False
                 continue
+
+            if event.type in (pygame.MOUSEBUTTONDOWN, pygame.MOUSEBUTTONUP, pygame.MOUSEMOTION):
+                # 內容（選單/設定/棋盤）畫在置中的 content 畫布上，所有互動元件的
+                # Rect 都是以該畫布為座標系；這裡把滑鼠座標平移回同一個座標系，
+                # 下游的按鈕/滑桿/棋盤點擊判斷就不需要另外處理留白區位移。
+                event.pos = (event.pos[0] - C.SIDE_MARGIN_WIDTH, event.pos[1])
 
             if screen_state == Screen.MENU:
                 if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
@@ -389,11 +429,23 @@ def run() -> None:
                         else:
                             selected_pos, legal_targets = None, []
 
+        content_mouse_pos = (
+            pygame.mouse.get_pos()[0] - C.SIDE_MARGIN_WIDTH,
+            pygame.mouse.get_pos()[1],
+        )
+        screen.fill(C.MARGIN_BACKGROUND_COLOR)
+
         if screen_state == Screen.MENU:
-            _draw_menu(screen, title_font, start_button, settings_button, menu_background)
+            _draw_menu(
+                content, title_font, start_button, settings_button, menu_background,
+                content_mouse_pos,
+            )
             pygame.display.set_caption("Chess Game - 主選單")
         elif screen_state == Screen.SETTINGS:
-            _draw_settings(screen, title_font, label_font, music_slider, sfx_slider, back_button)
+            _draw_settings(
+                content, title_font, label_font, music_slider, sfx_slider, back_button,
+                content_mouse_pos,
+            )
             pygame.display.set_caption("Chess Game - 設定")
         else:
             if skip_next_tick:
@@ -409,12 +461,23 @@ def run() -> None:
                 renderer.highlight_squares([selected_pos], C.SELECTED_SQUARE_COLOR)
                 renderer.highlight_squares(legal_targets, C.LEGAL_MOVE_HINT_COLOR)
             renderer.draw_pieces(game.board)
-            _draw_clock_bar(screen, label_font, game)
             if pending_promotion is not None:
                 _draw_promotion_popup(
-                    screen, renderer, label_font, pending_promotion["color"], promotion_rects
+                    content,
+                    renderer,
+                    label_font,
+                    pending_promotion["color"],
+                    promotion_rects,
+                    content_mouse_pos,
                 )
             pygame.display.set_caption(_status_text(game))
+
+        screen.blit(content, (C.SIDE_MARGIN_WIDTH, 0))
+
+        if screen_state == Screen.PLAYING:
+            _draw_black_clock(screen, clock_font, tiny_font, game)
+            _draw_white_clock(screen, clock_font, tiny_font, game)
+            _draw_shortcut_hints(screen, tiny_font)
 
         pygame.display.flip()
 

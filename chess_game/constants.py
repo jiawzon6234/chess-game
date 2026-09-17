@@ -6,8 +6,15 @@ BOARD_SIZE = 8
 # 每一格在畫面上的像素大小
 SQUARE_SIZE = 90
 
-# 視窗大小 (正方形棋盤)
+# 棋盤內容區大小 (正方形)，也是選單/設定畫面內容的繪製尺寸
 WINDOW_SIZE = BOARD_SIZE * SQUARE_SIZE
+
+# 對局畫面左右兩側的留白區寬度（黑色，顯示西洋棋鐘與快捷鍵提示）
+SIDE_MARGIN_WIDTH = 200
+
+# 實際視窗大小：棋盤內容置中，左右各留白 SIDE_MARGIN_WIDTH
+WINDOW_WIDTH = SIDE_MARGIN_WIDTH * 2 + WINDOW_SIZE
+WINDOW_HEIGHT = WINDOW_SIZE
 
 # 每秒畫面更新次數
 FPS = 30
@@ -36,13 +43,14 @@ SLIDER_TRACK_COLOR = (80, 80, 80)
 SLIDER_FILL_COLOR = (106, 168, 79)
 SLIDER_HANDLE_COLOR = (255, 255, 255)
 
-# ---- 西洋棋鐘（顯示於對局畫面頂端的半透明列）----
-CLOCK_BAR_HEIGHT = 44
-CLOCK_BAR_COLOR = (15, 15, 15, 190)
+# ---- 對局畫面兩側留白區：西洋棋鐘、快捷鍵提示 ----
+MARGIN_BACKGROUND_COLOR = (0, 0, 0)
 CLOCK_TEXT_COLOR = (200, 200, 200)
 CLOCK_ACTIVE_TEXT_COLOR = (255, 230, 150)
 CLOCK_LOW_TIME_COLOR = (255, 90, 90)
 CLOCK_LOW_TIME_THRESHOLD_SECONDS = 30
+HINT_TEXT_COLOR = (190, 190, 190)
+HINT_TITLE_COLOR = (230, 230, 230)
 
 # 棋盤座標系統說明：
 #   board.grid[row][col]

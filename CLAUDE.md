@@ -31,7 +31,9 @@ flake8 .
 
 ## 架構說明
 
-- `chess_game/constants.py`：棋盤大小、顏色、視窗大小等常數。
+- `chess_game/constants.py`：棋盤大小、顏色、視窗大小等常數。`WINDOW_SIZE`
+  是棋盤/選單內容的正方形大小；實際視窗 `WINDOW_WIDTH`/`WINDOW_HEIGHT`
+  在左右各加上 `SIDE_MARGIN_WIDTH` 的黑色留白區（見 `gui/app.py`）。
 - `chess_game/board.py`：`Board` 類別，儲存 8x8 棋子陣列、易位權、
   吃過路兵目標格、回合資訊；提供代數記譜（如 `"e4"`）與內部座標
   `(row, col)` 互轉的靜態方法。
@@ -67,11 +69,19 @@ flake8 .
 - `chess_game/gui/`：Pygame 圖形介面。
   - `app.py`：主迴圈與畫面狀態機（`Screen.MENU` / `SETTINGS` / `PLAYING`），
     負責開始畫面、設定畫面、棋盤事件（滑鼠選子走棋、`R` 重新開始、
-    `Ctrl+Z` 悔棋、`Esc` 回主選單）、兵升變彈出選擇視窗、對局畫面頂端
-    的西洋棋鐘顯示列（`_draw_clock_bar`，每幀用 `pygame.time.Clock`
-    量到的 delta time 呼叫 `game.tick()`）、背景音樂與音效播放時機的
-    串接。新開局/重新開始/悔棋後會設定 `skip_next_tick`，避免把切換
-    畫面當下經過的時間誤算進西洋棋鐘。
+    `Ctrl+Z` 悔棋、`Esc` 回主選單）、兵升變彈出選擇視窗、背景音樂與
+    音效播放時機的串接。新開局/重新開始/悔棋後會設定 `skip_next_tick`，
+    避免把切換畫面當下經過的時間誤算進西洋棋鐘。
+    - **版面**：選單/設定/棋盤內容統一畫在一張置中的 `content`
+      （`WINDOW_SIZE x WINDOW_SIZE`）畫布上，再貼到實際視窗的中央；
+      左右兩側留白區直接畫在真正的 `screen` 上，顯示黑方鐘（左上角，
+      `_draw_black_clock`）、白方鐘（右下角，`_draw_white_clock`）、
+      快捷鍵提示（右上角，`_draw_shortcut_hints`）。因為互動元件
+      （按鈕/滑桿/棋盤格）的座標都以 `content` 為準，每幀事件迴圈一開
+      頭會把滑鼠事件的 `event.pos` 平移 `-SIDE_MARGIN_WIDTH`，下游點擊
+      判斷完全不需要另外處理留白區位移；`Button.draw()` 因此改為接受
+      外部傳入、已平移過的 `mouse_pos`（而非直接呼叫
+      `pygame.mouse.get_pos()`），避免 hover 判斷用到未平移的座標。
   - `renderer.py`：繪製棋盤與棋子（讀取 `assets/images/` 內的正式棋子
     圖片；若某檔案缺漏，該棋子會退回畫圓圈+字母的佔位圖形），並提供
     `render_piece_icon()` 供升變選擇視窗等場合繪製單一棋子圖示。
@@ -119,8 +129,10 @@ flake8 .
 - 三次重複局面和局、50 手和局規則
 - 悔棋（undo）功能（GUI：`Ctrl+Z`；CLI：輸入 `undo`；可多次悔棋，
   也可悔掉導致將死/和局/超時的最後一步）
-- 西洋棋鐘計時器（GUI 限定；雙方各 5 分鐘，對局畫面頂端顯示倒數，
-  剩餘 ≤30 秒轉紅色警示；持棋時間歸零自動判負）
+- 西洋棋鐘計時器（GUI 限定；雙方各 5 分鐘，剩餘 ≤30 秒轉紅色警示；
+  持棋時間歸零自動判負）
+- 對局畫面兩側黑色留白區：黑方鐘（左上角）、白方鐘（右下角）、
+  快捷鍵提示（右上角），棋盤內容置中不受遮擋
 - 基礎單元測試（`tests/`，含 `test_game.py`／`test_clock.py`
   涵蓋上述和局規則、悔棋與西洋棋鐘）
 
