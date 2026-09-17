@@ -8,6 +8,7 @@ import pygame
 
 from .. import constants as C
 from ..game import Game, GameStatus
+from ..pieces import PROMOTION_CHOICES
 from ..settings import Settings
 from .fonts import get_font
 from .renderer import Renderer
@@ -55,6 +56,10 @@ def _status_text(game: Game) -> str:
         return f"Chess Game - 將死！{winner_name}獲勝（按 R 重新開始，Esc 回主選單）"
     if game.status == GameStatus.STALEMATE:
         return "Chess Game - 和棋（逼和，按 R 重新開始，Esc 回主選單）"
+    if game.status == GameStatus.DRAW_BY_REPETITION:
+        return "Chess Game - 和棋（三次重複局面，按 R 重新開始，Esc 回主選單）"
+    if game.status == GameStatus.DRAW_BY_FIFTY_MOVE_RULE:
+        return "Chess Game - 和棋（50 手和局規則，按 R 重新開始，Esc 回主選單）"
     return f"Chess Game - 輪到{turn_name}走棋（按 R 重新開始，Esc 回主選單）"
 
 
@@ -104,6 +109,39 @@ def _draw_settings(
         slider.draw(screen)
 
     back_button.draw(screen)
+
+
+def _draw_promotion_popup(screen, renderer, label_font, color, promotion_rects) -> None:
+    overlay = pygame.Surface((C.WINDOW_SIZE, C.WINDOW_SIZE), pygame.SRCALPHA)
+    overlay.fill((0, 0, 0, 140))
+    screen.blit(overlay, (0, 0))
+
+    icon_rects = list(promotion_rects.values())
+    title_height = 34
+    padding = 20
+    panel_rect = pygame.Rect(
+        icon_rects[0].left - padding,
+        icon_rects[0].top - padding - title_height,
+        icon_rects[-1].right - icon_rects[0].left + padding * 2,
+        icon_rects[0].height + padding * 2 + title_height,
+    )
+    pygame.draw.rect(screen, C.BUTTON_COLOR, panel_rect, border_radius=14)
+    pygame.draw.rect(screen, C.BUTTON_TEXT_COLOR, panel_rect, 2, border_radius=14)
+
+    title_surface = label_font.render("選擇升變棋子", True, C.BUTTON_TEXT_COLOR)
+    title_rect = title_surface.get_rect(centerx=panel_rect.centerx, top=panel_rect.top + 8)
+    screen.blit(title_surface, title_rect)
+
+    mouse_pos = pygame.mouse.get_pos()
+    for piece_type, rect in promotion_rects.items():
+        hovered = rect.collidepoint(mouse_pos)
+        bg_color = C.BUTTON_HOVER_COLOR if hovered else C.LIGHT_SQUARE_COLOR
+        pygame.draw.rect(screen, bg_color, rect, border_radius=8)
+        pygame.draw.rect(screen, C.BUTTON_TEXT_COLOR, rect, 2, border_radius=8)
+
+        icon = renderer.render_piece_icon(color, piece_type, rect.width - 8)
+        icon_rect = icon.get_rect(center=rect.center)
+        screen.blit(icon, icon_rect)
 
 
 def run() -> None:
@@ -166,10 +204,28 @@ def run() -> None:
         value=settings.sfx_volume,
     )
 
+    promotion_icon_size = 72
+    promotion_gap = 14
+    promotion_popup_width = len(PROMOTION_CHOICES) * promotion_icon_size + (
+        len(PROMOTION_CHOICES) - 1
+    ) * promotion_gap
+    promotion_start_x = center_x - promotion_popup_width // 2
+    promotion_y = C.WINDOW_SIZE // 2 - promotion_icon_size // 2
+    promotion_rects = {
+        piece_type: pygame.Rect(
+            promotion_start_x + i * (promotion_icon_size + promotion_gap),
+            promotion_y,
+            promotion_icon_size,
+            promotion_icon_size,
+        )
+        for i, piece_type in enumerate(PROMOTION_CHOICES)
+    }
+
     renderer = Renderer(screen)
     game = Game()
     selected_pos = None
     legal_targets = []
+    pending_promotion = None
 
     screen_state = Screen.MENU
 
@@ -186,6 +242,7 @@ def run() -> None:
                         sfx.play_click()
                         game = Game()
                         selected_pos, legal_targets = None, []
+                        pending_promotion = None
                         screen_state = Screen.PLAYING
                     elif settings_button.is_clicked(event.pos):
                         sfx.play_click()
@@ -214,25 +271,62 @@ def run() -> None:
                     sfx.play_restart()
                     game = Game()
                     selected_pos, legal_targets = None, []
+                    pending_promotion = None
                 elif event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
-                    screen_state = Screen.MENU
+                    if pending_promotion is not None:
+                        pending_promotion = None
+                    else:
+                        screen_state = Screen.MENU
                 elif (
                     event.type == pygame.MOUSEBUTTONDOWN
                     and event.button == 1
                     and not game.is_game_over()
                 ):
+                    if pending_promotion is not None:
+                        chosen = next(
+                            (
+                                piece_type
+                                for piece_type, rect in promotion_rects.items()
+                                if rect.collidepoint(event.pos)
+                            ),
+                            None,
+                        )
+                        if chosen is not None:
+                            sfx.play_click()
+                            game.make_move(
+                                pending_promotion["from_pos"],
+                                pending_promotion["to_pos"],
+                                promotion=chosen,
+                            )
+                            sfx.play_move()
+                            if game.is_game_over():
+                                sfx.play_game_over()
+                        # 點擊視窗以外的地方視同取消這次升變選擇
+                        pending_promotion = None
+                        continue
+
                     clicked_pos = _pos_from_mouse(event.pos)
 
                     if selected_pos == clicked_pos:
                         selected_pos, legal_targets = None, []
                     elif selected_pos is not None and clicked_pos in legal_targets:
-                        # GUI 模式下兵升變預設自動升為皇后；
-                        # 之後可擴充成彈出選單讓玩家自行選擇。
-                        game.make_move(selected_pos, clicked_pos)
+                        moves_here = [
+                            m
+                            for m in game.legal_moves_for(selected_pos)
+                            if m.to_pos == clicked_pos
+                        ]
+                        if any(m.promotion is not None for m in moves_here):
+                            pending_promotion = {
+                                "from_pos": selected_pos,
+                                "to_pos": clicked_pos,
+                                "color": game.board.get_piece(selected_pos).color,
+                            }
+                        else:
+                            game.make_move(selected_pos, clicked_pos)
+                            sfx.play_move()
+                            if game.is_game_over():
+                                sfx.play_game_over()
                         selected_pos, legal_targets = None, []
-                        sfx.play_move()
-                        if game.is_game_over():
-                            sfx.play_game_over()
                     else:
                         piece = game.board.get_piece(clicked_pos)
                         if piece is not None and piece.color is game.turn:
@@ -255,6 +349,10 @@ def run() -> None:
                 renderer.highlight_squares([selected_pos], C.SELECTED_SQUARE_COLOR)
                 renderer.highlight_squares(legal_targets, C.LEGAL_MOVE_HINT_COLOR)
             renderer.draw_pieces(game.board)
+            if pending_promotion is not None:
+                _draw_promotion_popup(
+                    screen, renderer, label_font, pending_promotion["color"], promotion_rects
+                )
             pygame.display.set_caption(_status_text(game))
 
         pygame.display.flip()

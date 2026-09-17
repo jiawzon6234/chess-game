@@ -57,6 +57,10 @@ def run_cli() -> None:
         print(f"將死！{winner_name}獲勝。")
     elif game.status == GameStatus.STALEMATE:
         print("和棋（逼和）。")
+    elif game.status == GameStatus.DRAW_BY_REPETITION:
+        print("和棋（三次重複局面）。")
+    elif game.status == GameStatus.DRAW_BY_FIFTY_MOVE_RULE:
+        print("和棋（50 手和局規則）。")
 
 
 def main() -> None:

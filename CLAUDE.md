@@ -47,16 +47,20 @@ flake8 .
 - `chess_game/game.py`：`Game` 類別，整合以上模組，對外提供
   `legal_moves_for(pos)`、`make_move(from_pos, to_pos)`、
   `is_game_over()` 等介面，並管理走棋歷史與遊戲狀態
-  （進行中 / 將死 / 逼和）。
+  （進行中 / 將死 / 逼和 / 三次重複局面和局 / 50 手和局規則）。
+  三次重複局面透過 `position_history`（局面雜湊 → 出現次數）判斷；
+  50 手和局規則沿用 `board.halfmove_clock`（`rules.apply_move` 已在
+  兵move/吃子時重置、其餘走法遞增）。
 - `chess_game/settings.py`：`Settings` 類別，管理音樂音量（`music_volume`）與
   音效音量（`sfx_volume`），存讀取於專案根目錄的 `settings.json`
   （執行期自動產生，已加入 `.gitignore`、不納入版本控制）。
 - `chess_game/gui/`：Pygame 圖形介面。
   - `app.py`：主迴圈與畫面狀態機（`Screen.MENU` / `SETTINGS` / `PLAYING`），
     負責開始畫面、設定畫面、棋盤事件（滑鼠選子走棋、`R` 重新開始、
-    `Esc` 回主選單）、背景音樂與音效播放時機的串接。
+    `Esc` 回主選單）、兵升變彈出選擇視窗、背景音樂與音效播放時機的串接。
   - `renderer.py`：繪製棋盤與棋子（讀取 `assets/images/` 內的正式棋子
-    圖片；若某檔案缺漏，該棋子會退回畫圓圈+字母的佔位圖形）。
+    圖片；若某檔案缺漏，該棋子會退回畫圓圈+字母的佔位圖形），並提供
+    `render_piece_icon()` 供升變選擇視窗等場合繪製單一棋子圖示。
   - `fonts.py`：`get_font()`，依序嘗試系統中文字型（微軟正黑體等），
     避免預設 Arial 字型顯示中文時變成方框亂碼。
   - `screens.py`：選單／設定畫面共用的 `Button`、`Slider` UI 元件。
@@ -97,12 +101,12 @@ flake8 .
 - 音效（按鈕、走棋、重新開始、棋局結束，CC0 素材）
 - 中文字型顯示修正（選單/設定畫面文字改用系統中文字型，避免亂碼）
 - 正式棋子美術素材（取代圓圈+字母佔位圖形，CC0 素材）
-- 基礎單元測試（`tests/`）
+- GUI 兵升變彈出選擇視窗（點選皇后/城堡/主教/騎士，取代自動升為皇后）
+- 三次重複局面和局、50 手和局規則
+- 基礎單元測試（`tests/`，含 `test_game.py` 涵蓋上述兩種和局規則）
 
 ## 待辦（TODO）/ 可擴充方向
 
-- GUI 升變彈出選擇視窗（目前自動升為皇后）
-- 三次重複局面和局、50 手和局規則
 - 悔棋（undo）功能
 - 走棋紀錄輸出為 PGN
 - AI / 電腦對手（例如 minimax + alpha-beta 剪枝）

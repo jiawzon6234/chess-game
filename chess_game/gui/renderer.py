@@ -86,3 +86,23 @@ class Renderer:
         label = self.font.render(piece.type.value, True, text_color)
         label_rect = label.get_rect(center=center)
         self.screen.blit(label, label_rect)
+
+    def render_piece_icon(self, color, piece_type, size: int) -> "pygame.Surface":
+        """回傳單一棋子圖示（size x size，含透明背景），供升變選擇視窗等場合使用。"""
+        icon = pygame.Surface((size, size), pygame.SRCALPHA)
+        image = self.images.get((color, piece_type.value))
+        if image is not None:
+            icon.blit(pygame.transform.smoothscale(image, (size, size)), (0, 0))
+        else:
+            center = (size // 2, size // 2)
+            radius = int(size * 0.38)
+            fill_color = C.WHITE_PIECE_FILL if color is Color.WHITE else C.BLACK_PIECE_FILL
+            text_color = (20, 20, 20) if color is Color.WHITE else (245, 245, 245)
+
+            pygame.draw.circle(icon, fill_color, center, radius)
+            pygame.draw.circle(icon, C.PIECE_OUTLINE_COLOR, center, radius, 2)
+
+            label = self.font.render(piece_type.value, True, text_color)
+            label_rect = label.get_rect(center=center)
+            icon.blit(label, label_rect)
+        return icon
