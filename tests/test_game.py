@@ -206,6 +206,16 @@ def test_tick_causes_timeout_loss_when_time_runs_out():
     assert game.is_game_over()
 
 
+def test_unlimited_time_limit_never_triggers_timeout():
+    """對局設定選「無限制」時會以 time_limit_seconds=inf 建立 Game。"""
+    game = Game(time_limit_seconds=float("inf"))
+    game.tick(10_000_000)
+
+    assert game.status == GameStatus.ONGOING
+    assert not game.is_game_over()
+    assert game.clock.remaining[Color.WHITE] == float("inf")
+
+
 def test_tick_does_nothing_once_game_is_over():
     game = Game()
     for move_str in ("e2e4", "e7e5", "f1c4", "b8c6", "d1h5", "g8f6", "h5f7"):

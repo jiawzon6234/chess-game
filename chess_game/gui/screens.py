@@ -14,15 +14,34 @@ class Button:
     def is_clicked(self, mouse_pos: tuple) -> bool:
         return self.rect.collidepoint(mouse_pos)
 
-    def draw(self, screen: "pygame.Surface", mouse_pos: tuple = None) -> None:
+    def draw(
+        self,
+        screen: "pygame.Surface",
+        mouse_pos: tuple = None,
+        selected: bool = False,
+        disabled: bool = False,
+    ) -> None:
         if mouse_pos is None:
             mouse_pos = pygame.mouse.get_pos()
-        hovered = self.rect.collidepoint(mouse_pos)
-        color = C.BUTTON_HOVER_COLOR if hovered else C.BUTTON_COLOR
+        hovered = not disabled and self.rect.collidepoint(mouse_pos)
+
+        if disabled:
+            color = C.BUTTON_DISABLED_COLOR
+            text_color = C.BUTTON_DISABLED_TEXT_COLOR
+        elif selected:
+            color = C.BUTTON_SELECTED_COLOR
+            text_color = C.BUTTON_TEXT_COLOR
+        elif hovered:
+            color = C.BUTTON_HOVER_COLOR
+            text_color = C.BUTTON_TEXT_COLOR
+        else:
+            color = C.BUTTON_COLOR
+            text_color = C.BUTTON_TEXT_COLOR
+
         pygame.draw.rect(screen, color, self.rect, border_radius=10)
         pygame.draw.rect(screen, C.BUTTON_TEXT_COLOR, self.rect, 2, border_radius=10)
 
-        label = self.font.render(self.text, True, C.BUTTON_TEXT_COLOR)
+        label = self.font.render(self.text, True, text_color)
         label_rect = label.get_rect(center=self.rect.center)
         screen.blit(label, label_rect)
 

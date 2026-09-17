@@ -29,7 +29,12 @@ MENU_BACKGROUND_PATH = os.path.join(
 class Screen(Enum):
     MENU = auto()
     SETTINGS = auto()
+    GAME_OPTIONS = auto()
     PLAYING = auto()
+
+
+# 持棋時間選項：(顯示文字, 秒數)，None 代表無限制。
+TIME_LIMIT_OPTIONS = (("5 分鐘", 300), ("15 分鐘", 900), ("無限制", None))
 
 
 def _start_background_music(settings: Settings) -> None:
@@ -49,28 +54,36 @@ def _pos_from_mouse(mouse_pos: tuple) -> tuple:
     return (y // C.SQUARE_SIZE, x // C.SQUARE_SIZE)
 
 
-_HINTS = "按 R 重新開始，Ctrl+Z 悔棋，Esc 回主選單"
+def _hints_text(undo_enabled: bool) -> str:
+    parts = ["按 R 重新開始"]
+    if undo_enabled:
+        parts.append("Ctrl+Z 悔棋")
+    parts.append("Esc 回主選單")
+    return "，".join(parts)
 
 
-def _status_text(game: Game) -> str:
+def _status_text(game: Game, undo_enabled: bool) -> str:
+    hints = _hints_text(undo_enabled)
     turn_name = "白方" if game.turn.value == "white" else "黑方"
     if game.status == GameStatus.CHECKMATE:
         winner_name = "白方" if game.winner.value == "white" else "黑方"
-        return f"Chess Game - 將死！{winner_name}獲勝（{_HINTS}）"
+        return f"Chess Game - 將死！{winner_name}獲勝（{hints}）"
     if game.status == GameStatus.STALEMATE:
-        return f"Chess Game - 和棋（逼和，{_HINTS}）"
+        return f"Chess Game - 和棋（逼和，{hints}）"
     if game.status == GameStatus.DRAW_BY_REPETITION:
-        return f"Chess Game - 和棋（三次重複局面，{_HINTS}）"
+        return f"Chess Game - 和棋（三次重複局面，{hints}）"
     if game.status == GameStatus.DRAW_BY_FIFTY_MOVE_RULE:
-        return f"Chess Game - 和棋（50 手和局規則，{_HINTS}）"
+        return f"Chess Game - 和棋（50 手和局規則，{hints}）"
     if game.status == GameStatus.TIMEOUT:
         winner_name = "白方" if game.winner.value == "white" else "黑方"
         loser_name = "黑方" if game.winner.value == "white" else "白方"
-        return f"Chess Game - {loser_name}時間到！{winner_name}獲勝（{_HINTS}）"
-    return f"Chess Game - 輪到{turn_name}走棋（{_HINTS}）"
+        return f"Chess Game - {loser_name}時間到！{winner_name}獲勝（{hints}）"
+    return f"Chess Game - 輪到{turn_name}走棋（{hints}）"
 
 
 def _format_clock_time(seconds: float) -> str:
+    if seconds == float("inf"):
+        return "∞"
     total_seconds = max(0, int(seconds))
     minutes, secs = divmod(total_seconds, 60)
     return f"{minutes:02d}:{secs:02d}"
@@ -115,14 +128,16 @@ def _draw_white_clock(screen, clock_font, tiny_font, game: Game) -> None:
     screen.blit(label_surface, label_rect)
 
 
-_SHORTCUT_LINES = ("快捷鍵", "R 重新開始", "Ctrl+Z 悔棋", "Esc 回主選單")
-
-
-def _draw_shortcut_hints(screen, tiny_font) -> None:
+def _draw_shortcut_hints(screen, tiny_font, undo_enabled: bool) -> None:
     """快捷鍵提示：畫在右側留白區的右上角。"""
+    lines = ["快捷鍵", "R 重新開始"]
+    if undo_enabled:
+        lines.append("Ctrl+Z 悔棋")
+    lines.append("Esc 回主選單")
+
     left_x = C.SIDE_MARGIN_WIDTH + C.WINDOW_SIZE + MARGIN_PADDING
     y = MARGIN_PADDING
-    for i, line in enumerate(_SHORTCUT_LINES):
+    for i, line in enumerate(lines):
         color = C.HINT_TITLE_COLOR if i == 0 else C.HINT_TEXT_COLOR
         surface = tiny_font.render(line, True, color)
         rect = surface.get_rect(topleft=(left_x, y))
@@ -178,6 +193,52 @@ def _draw_settings(
         slider.draw(screen)
 
     back_button.draw(screen, mouse_pos)
+
+
+def _draw_game_options(
+    screen,
+    title_font,
+    label_font,
+    time_buttons,
+    undo_toggle_button,
+    confirm_button,
+    back_button,
+    selected_time_limit_seconds,
+    undo_enabled,
+    mouse_pos,
+) -> None:
+    screen.fill(C.MENU_BACKGROUND_COLOR)
+
+    title_surface = title_font.render("對局設定", True, C.MENU_TITLE_COLOR)
+    title_rect = title_surface.get_rect(center=(C.WINDOW_SIZE // 2, 130))
+    screen.blit(title_surface, title_rect)
+
+    time_label = label_font.render("持棋時間", True, C.BUTTON_TEXT_COLOR)
+    time_label_rect = time_label.get_rect(center=(C.WINDOW_SIZE // 2, 225))
+    screen.blit(time_label, time_label_rect)
+
+    for seconds, button in time_buttons:
+        is_selected = (not undo_enabled) and seconds == selected_time_limit_seconds
+        button.draw(screen, mouse_pos, selected=is_selected, disabled=undo_enabled)
+
+    undo_label = label_font.render("允許悔棋", True, C.BUTTON_TEXT_COLOR)
+    undo_label_rect = undo_label.get_rect(center=(C.WINDOW_SIZE // 2, 375))
+    screen.blit(undo_label, undo_label_rect)
+
+    undo_toggle_button.text = "開" if undo_enabled else "關"
+    undo_toggle_button.draw(screen, mouse_pos, selected=undo_enabled)
+
+    if undo_enabled:
+        note_surface = label_font.render(
+            "（悔棋開啟時，持棋時間自動設為無限制）", True, C.HINT_TEXT_COLOR
+        )
+        note_rect = note_surface.get_rect(
+            center=(C.WINDOW_SIZE // 2, undo_toggle_button.rect.bottom + 26)
+        )
+        screen.blit(note_surface, note_rect)
+
+    back_button.draw(screen, mouse_pos)
+    confirm_button.draw(screen, mouse_pos)
 
 
 def _draw_promotion_popup(screen, renderer, label_font, color, promotion_rects, mouse_pos) -> None:
@@ -276,6 +337,58 @@ def run() -> None:
         value=settings.sfx_volume,
     )
 
+    option_button_font = get_font(22, bold=True)
+
+    time_button_width, time_button_height, time_button_gap = 150, 56, 20
+    time_buttons_total_width = len(TIME_LIMIT_OPTIONS) * time_button_width + (
+        len(TIME_LIMIT_OPTIONS) - 1
+    ) * time_button_gap
+    time_buttons_start_x = center_x - time_buttons_total_width // 2
+    time_buttons = [
+        (
+            seconds,
+            Button(
+                pygame.Rect(
+                    time_buttons_start_x + i * (time_button_width + time_button_gap),
+                    260,
+                    time_button_width,
+                    time_button_height,
+                ),
+                text,
+                option_button_font,
+            ),
+        )
+        for i, (text, seconds) in enumerate(TIME_LIMIT_OPTIONS)
+    ]
+
+    undo_toggle_button = Button(
+        pygame.Rect(center_x - 70, 410, 140, 56),
+        "關",
+        option_button_font,
+    )
+
+    options_bottom_width, options_bottom_height, options_bottom_gap = 200, 64, 24
+    options_bottom_total_width = options_bottom_width * 2 + options_bottom_gap
+    options_bottom_start_x = center_x - options_bottom_total_width // 2
+    options_back_button = Button(
+        pygame.Rect(options_bottom_start_x, 580, options_bottom_width, options_bottom_height),
+        "返回",
+        button_font,
+    )
+    confirm_button = Button(
+        pygame.Rect(
+            options_bottom_start_x + options_bottom_width + options_bottom_gap,
+            580,
+            options_bottom_width,
+            options_bottom_height,
+        ),
+        "開始對局",
+        button_font,
+    )
+
+    selected_time_limit_seconds = 300
+    undo_enabled = False
+
     promotion_icon_size = 72
     promotion_gap = 14
     promotion_popup_width = len(PROMOTION_CHOICES) * promotion_icon_size + (
@@ -295,6 +408,7 @@ def run() -> None:
 
     renderer = Renderer(content)
     game = Game()
+    active_undo_enabled = False  # 目前這局是否允許悔棋，由對局設定畫面決定
     selected_pos = None
     legal_targets = []
     pending_promotion = None
@@ -321,11 +435,7 @@ def run() -> None:
                 if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
                     if start_button.is_clicked(event.pos):
                         sfx.play_click()
-                        game = Game()
-                        selected_pos, legal_targets = None, []
-                        pending_promotion = None
-                        skip_next_tick = True
-                        screen_state = Screen.PLAYING
+                        screen_state = Screen.GAME_OPTIONS
                     elif settings_button.is_clicked(event.pos):
                         sfx.play_click()
                         screen_state = Screen.SETTINGS
@@ -348,10 +458,46 @@ def run() -> None:
                         sfx.play_click()
                         screen_state = Screen.MENU
 
+            elif screen_state == Screen.GAME_OPTIONS:
+                if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+                    # 用獨立的旗標判斷「有沒有點到時間按鈕」，不能只看
+                    # clicked_time_option 是否為 None——「無限制」選項本身
+                    # 的值就是 None，兩者用同一個變數判斷會分不清楚。
+                    time_option_clicked = False
+                    clicked_time_option = None
+                    if not undo_enabled:
+                        for seconds, button in time_buttons:
+                            if button.is_clicked(event.pos):
+                                clicked_time_option = seconds
+                                time_option_clicked = True
+                                break
+
+                    if time_option_clicked:
+                        sfx.play_click()
+                        selected_time_limit_seconds = clicked_time_option
+                    elif undo_toggle_button.is_clicked(event.pos):
+                        sfx.play_click()
+                        undo_enabled = not undo_enabled
+                    elif options_back_button.is_clicked(event.pos):
+                        sfx.play_click()
+                        screen_state = Screen.MENU
+                    elif confirm_button.is_clicked(event.pos):
+                        sfx.play_click()
+                        if undo_enabled or selected_time_limit_seconds is None:
+                            effective_time_limit = float("inf")
+                        else:
+                            effective_time_limit = selected_time_limit_seconds
+                        game = Game(time_limit_seconds=effective_time_limit)
+                        active_undo_enabled = undo_enabled
+                        selected_pos, legal_targets = None, []
+                        pending_promotion = None
+                        skip_next_tick = True
+                        screen_state = Screen.PLAYING
+
             elif screen_state == Screen.PLAYING:
                 if event.type == pygame.KEYDOWN and event.key == pygame.K_r:
                     sfx.play_restart()
-                    game = Game()
+                    game = Game(time_limit_seconds=game.clock.time_limit_seconds)
                     selected_pos, legal_targets = None, []
                     pending_promotion = None
                     skip_next_tick = True
@@ -360,7 +506,7 @@ def run() -> None:
                     and event.key == pygame.K_z
                     and event.mod & pygame.KMOD_CTRL
                 ):
-                    if pending_promotion is None and game.undo():
+                    if active_undo_enabled and pending_promotion is None and game.undo():
                         sfx.play_move()
                         selected_pos, legal_targets = None, []
                         skip_next_tick = True
@@ -447,6 +593,20 @@ def run() -> None:
                 content_mouse_pos,
             )
             pygame.display.set_caption("Chess Game - 設定")
+        elif screen_state == Screen.GAME_OPTIONS:
+            _draw_game_options(
+                content,
+                title_font,
+                label_font,
+                time_buttons,
+                undo_toggle_button,
+                confirm_button,
+                options_back_button,
+                selected_time_limit_seconds,
+                undo_enabled,
+                content_mouse_pos,
+            )
+            pygame.display.set_caption("Chess Game - 對局設定")
         else:
             if skip_next_tick:
                 skip_next_tick = False
@@ -470,14 +630,14 @@ def run() -> None:
                     promotion_rects,
                     content_mouse_pos,
                 )
-            pygame.display.set_caption(_status_text(game))
+            pygame.display.set_caption(_status_text(game, active_undo_enabled))
 
         screen.blit(content, (C.SIDE_MARGIN_WIDTH, 0))
 
         if screen_state == Screen.PLAYING:
             _draw_black_clock(screen, clock_font, tiny_font, game)
             _draw_white_clock(screen, clock_font, tiny_font, game)
-            _draw_shortcut_hints(screen, tiny_font)
+            _draw_shortcut_hints(screen, tiny_font, active_undo_enabled)
 
         pygame.display.flip()
 

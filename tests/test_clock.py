@@ -40,6 +40,15 @@ def test_tick_ignored_once_timed_out():
     assert clock.timed_out_color is Color.WHITE
 
 
+def test_unlimited_time_never_times_out():
+    """time_limit_seconds=inf 用來代表「無限制」，長時間流逝也不應超時。"""
+    clock = ChessClock(float("inf"))
+    clock.tick(Color.WHITE, 10_000_000)
+    assert clock.remaining[Color.WHITE] == float("inf")
+    assert clock.timed_out_color is None
+    assert not clock.is_time_up(Color.WHITE)
+
+
 def test_snapshot_and_restore_roundtrip():
     clock = ChessClock(60)
     clock.tick(Color.WHITE, 20)
