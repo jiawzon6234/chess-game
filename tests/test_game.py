@@ -181,3 +181,73 @@ def test_undo_after_checkmate_reopens_the_game():
     assert not game.is_game_over()
     assert game.turn is Color.WHITE
     assert len(game.all_legal_moves()) > 0
+
+
+def test_new_game_has_five_minute_clock_for_both_sides():
+    game = Game()
+    assert game.clock.remaining[Color.WHITE] == 300
+    assert game.clock.remaining[Color.BLACK] == 300
+
+
+def test_tick_only_drains_the_side_to_move():
+    game = Game()  # 白方先走
+    game.tick(10)
+    assert game.clock.remaining[Color.WHITE] == 290
+    assert game.clock.remaining[Color.BLACK] == 300
+    assert game.status == GameStatus.ONGOING
+
+
+def test_tick_causes_timeout_loss_when_time_runs_out():
+    game = Game(time_limit_seconds=5)
+    game.tick(5.5)
+
+    assert game.status == GameStatus.TIMEOUT
+    assert game.winner is Color.BLACK  # 白方超時，黑方獲勝
+    assert game.is_game_over()
+
+
+def test_tick_does_nothing_once_game_is_over():
+    game = Game()
+    for move_str in ("e2e4", "e7e5", "f1c4", "b8c6", "d1h5", "g8f6", "h5f7"):
+        _apply_algebraic(game, move_str)
+    assert game.status == GameStatus.CHECKMATE
+
+    remaining_before = dict(game.clock.remaining)
+    game.tick(9999)
+
+    assert game.clock.remaining == remaining_before
+    assert game.status == GameStatus.CHECKMATE  # 未被 tick 覆蓋成 TIMEOUT
+
+
+def test_undo_restores_clock_state():
+    game = Game()
+    game.tick(30)
+    assert game.clock.remaining[Color.WHITE] == 270
+
+    _apply_algebraic(game, "e2e4")
+    game.tick(15)
+    assert game.clock.remaining[Color.BLACK] == 285
+
+    assert game.undo()
+
+    assert game.clock.remaining[Color.WHITE] == 270
+    assert game.clock.remaining[Color.BLACK] == 300
+
+
+def test_undo_after_timeout_allows_clock_to_resume():
+    """悔掉造成超時之前的那一步後，時鐘應恢復正常運作
+    （而不是因為 timed_out_color 殘留而永遠卡住）。"""
+    game = Game(time_limit_seconds=5)
+    _apply_algebraic(game, "e2e4")  # 先走一步，才有東西可悔棋
+    game.tick(5.5)  # 換黑方計時，黑方超時
+    assert game.status == GameStatus.TIMEOUT
+    assert game.winner is Color.WHITE
+
+    assert game.undo()
+    assert game.status == GameStatus.ONGOING
+    assert game.clock.timed_out_color is None
+    assert game.turn is Color.WHITE
+
+    game.tick(1)
+    assert game.clock.remaining[Color.WHITE] == 4
+    assert game.status == GameStatus.ONGOING

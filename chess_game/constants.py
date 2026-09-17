@@ -36,6 +36,14 @@ SLIDER_TRACK_COLOR = (80, 80, 80)
 SLIDER_FILL_COLOR = (106, 168, 79)
 SLIDER_HANDLE_COLOR = (255, 255, 255)
 
+# ---- 西洋棋鐘（顯示於對局畫面頂端的半透明列）----
+CLOCK_BAR_HEIGHT = 44
+CLOCK_BAR_COLOR = (15, 15, 15, 190)
+CLOCK_TEXT_COLOR = (200, 200, 200)
+CLOCK_ACTIVE_TEXT_COLOR = (255, 230, 150)
+CLOCK_LOW_TIME_COLOR = (255, 90, 90)
+CLOCK_LOW_TIME_THRESHOLD_SECONDS = 30
+
 # 棋盤座標系統說明：
 #   board.grid[row][col]
 #   row 0 對應棋盤最上方 (黑方底線，第 8 列)

@@ -8,7 +8,7 @@ import pygame
 
 from .. import constants as C
 from ..game import Game, GameStatus
-from ..pieces import PROMOTION_CHOICES
+from ..pieces import Color, PROMOTION_CHOICES
 from ..settings import Settings
 from .fonts import get_font
 from .renderer import Renderer
@@ -63,7 +63,42 @@ def _status_text(game: Game) -> str:
         return f"Chess Game - 和棋（三次重複局面，{_HINTS}）"
     if game.status == GameStatus.DRAW_BY_FIFTY_MOVE_RULE:
         return f"Chess Game - 和棋（50 手和局規則，{_HINTS}）"
+    if game.status == GameStatus.TIMEOUT:
+        winner_name = "白方" if game.winner.value == "white" else "黑方"
+        loser_name = "黑方" if game.winner.value == "white" else "白方"
+        return f"Chess Game - {loser_name}時間到！{winner_name}獲勝（{_HINTS}）"
     return f"Chess Game - 輪到{turn_name}走棋（{_HINTS}）"
+
+
+def _format_clock_time(seconds: float) -> str:
+    total_seconds = max(0, int(seconds))
+    minutes, secs = divmod(total_seconds, 60)
+    return f"{minutes:02d}:{secs:02d}"
+
+
+def _draw_clock_bar(screen, label_font, game: Game) -> None:
+    bar = pygame.Surface((C.WINDOW_SIZE, C.CLOCK_BAR_HEIGHT), pygame.SRCALPHA)
+    bar.fill(C.CLOCK_BAR_COLOR)
+    screen.blit(bar, (0, 0))
+
+    active_color = game.turn if not game.is_game_over() else None
+    entries = (
+        ("黑方", Color.BLACK, "midleft", (12, C.CLOCK_BAR_HEIGHT // 2)),
+        ("白方", Color.WHITE, "midright", (C.WINDOW_SIZE - 12, C.CLOCK_BAR_HEIGHT // 2)),
+    )
+    for label, color, anchor_name, anchor_pos in entries:
+        remaining = game.clock.remaining[color]
+        text = f"{label} {_format_clock_time(remaining)}"
+        if remaining <= C.CLOCK_LOW_TIME_THRESHOLD_SECONDS:
+            text_color = C.CLOCK_LOW_TIME_COLOR
+        elif color is active_color:
+            text_color = C.CLOCK_ACTIVE_TEXT_COLOR
+        else:
+            text_color = C.CLOCK_TEXT_COLOR
+
+        surface = label_font.render(text, True, text_color)
+        rect = surface.get_rect(**{anchor_name: anchor_pos})
+        screen.blit(surface, rect)
 
 
 def _load_menu_background() -> "pygame.Surface | None":
@@ -229,11 +264,14 @@ def run() -> None:
     selected_pos = None
     legal_targets = []
     pending_promotion = None
+    skip_next_tick = True  # 避免把「進入對局前」經過的時間算進西洋棋鐘
 
     screen_state = Screen.MENU
 
     running = True
     while running:
+        dt_seconds = clock.tick(C.FPS) / 1000.0
+
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 running = False
@@ -246,6 +284,7 @@ def run() -> None:
                         game = Game()
                         selected_pos, legal_targets = None, []
                         pending_promotion = None
+                        skip_next_tick = True
                         screen_state = Screen.PLAYING
                     elif settings_button.is_clicked(event.pos):
                         sfx.play_click()
@@ -275,6 +314,7 @@ def run() -> None:
                     game = Game()
                     selected_pos, legal_targets = None, []
                     pending_promotion = None
+                    skip_next_tick = True
                 elif (
                     event.type == pygame.KEYDOWN
                     and event.key == pygame.K_z
@@ -283,6 +323,7 @@ def run() -> None:
                     if pending_promotion is None and game.undo():
                         sfx.play_move()
                         selected_pos, legal_targets = None, []
+                        skip_next_tick = True
                 elif event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
                     if pending_promotion is not None:
                         pending_promotion = None
@@ -355,11 +396,20 @@ def run() -> None:
             _draw_settings(screen, title_font, label_font, music_slider, sfx_slider, back_button)
             pygame.display.set_caption("Chess Game - 設定")
         else:
+            if skip_next_tick:
+                skip_next_tick = False
+            else:
+                was_game_over = game.is_game_over()
+                game.tick(dt_seconds)
+                if not was_game_over and game.is_game_over():
+                    sfx.play_game_over()
+
             renderer.draw_board()
             if selected_pos is not None:
                 renderer.highlight_squares([selected_pos], C.SELECTED_SQUARE_COLOR)
                 renderer.highlight_squares(legal_targets, C.LEGAL_MOVE_HINT_COLOR)
             renderer.draw_pieces(game.board)
+            _draw_clock_bar(screen, label_font, game)
             if pending_promotion is not None:
                 _draw_promotion_popup(
                     screen, renderer, label_font, pending_promotion["color"], promotion_rects
@@ -367,7 +417,6 @@ def run() -> None:
             pygame.display.set_caption(_status_text(game))
 
         pygame.display.flip()
-        clock.tick(C.FPS)
 
     pygame.quit()
     sys.exit()

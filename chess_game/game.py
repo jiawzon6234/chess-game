@@ -2,6 +2,7 @@
 
 from . import rules
 from .board import Board
+from .clock import ChessClock, DEFAULT_TIME_LIMIT_SECONDS
 from .pieces import PieceType
 
 # 三次重複局面：同一局面（棋子擺放、輪到誰走、易位權、吃過路兵目標格皆相同）
@@ -19,10 +20,11 @@ class GameStatus:
     STALEMATE = "stalemate"
     DRAW_BY_REPETITION = "draw_by_repetition"
     DRAW_BY_FIFTY_MOVE_RULE = "draw_by_fifty_move_rule"
+    TIMEOUT = "timeout"
 
 
 class Game:
-    def __init__(self):
+    def __init__(self, time_limit_seconds: float = DEFAULT_TIME_LIMIT_SECONDS):
         self.board = Board()
         self.move_history = []
         self.status = GameStatus.ONGOING
@@ -30,6 +32,7 @@ class Game:
         self.position_history = {}
         self._record_position()
         self._undo_stack = []
+        self.clock = ChessClock(time_limit_seconds)
 
     @property
     def turn(self):
@@ -66,7 +69,13 @@ class Game:
             move = next((m for m in candidates if m.promotion is promotion), move)
 
         self._undo_stack.append(
-            (self.board.clone(), self.status, self.winner, dict(self.position_history))
+            (
+                self.board.clone(),
+                self.status,
+                self.winner,
+                dict(self.position_history),
+                self.clock.snapshot(),
+            )
         )
 
         rules.apply_move(self.board, move)
@@ -81,19 +90,32 @@ class Game:
     def undo(self) -> bool:
         """悔棋一步，回到上一步走完之前的狀態。若沒有步可悔則回傳 False。
 
-        悔棋不受 `is_game_over()` 限制——即使已將死/和局，也能悔掉最後
-        一步棋，讓棋局回到進行中的狀態。
+        悔棋不受 `is_game_over()` 限制——即使已將死/和局/超時，也能悔掉
+        最後一步棋，讓棋局回到進行中的狀態；雙方的西洋棋鐘剩餘時間也會
+        一併還原。
         """
         if not self._undo_stack:
             return False
 
-        board, status, winner, position_history = self._undo_stack.pop()
+        board, status, winner, position_history, clock_snapshot = self._undo_stack.pop()
         self.board = board
         self.status = status
         self.winner = winner
         self.position_history = position_history
+        self.clock.restore(clock_snapshot)
         self.move_history.pop()
         return True
+
+    def tick(self, elapsed_seconds: float) -> None:
+        """讓目前輪到走棋的一方西洋棋鐘減少 elapsed_seconds；時間歸零則立即
+        判定該方超時輸棋。棋局已結束時不做任何事。"""
+        if self.is_game_over():
+            return
+
+        self.clock.tick(self.board.turn, elapsed_seconds)
+        if self.clock.timed_out_color is not None:
+            self.status = GameStatus.TIMEOUT
+            self.winner = self.clock.timed_out_color.opposite
 
     def _update_status(self) -> None:
         side_to_move = self.board.turn

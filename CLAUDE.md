@@ -46,22 +46,32 @@ flake8 .
   內含易位、吃過路兵、升變、易位權與吃過路兵目標格的狀態更新）。
 - `chess_game/game.py`：`Game` 類別，整合以上模組，對外提供
   `legal_moves_for(pos)`、`make_move(from_pos, to_pos)`、
-  `is_game_over()`、`undo()` / `can_undo()` 等介面，並管理走棋歷史與
-  遊戲狀態（進行中 / 將死 / 逼和 / 三次重複局面和局 / 50 手和局規則）。
-  三次重複局面透過 `position_history`（局面雜湊 → 出現次數）判斷；
-  50 手和局規則沿用 `board.halfmove_clock`（`rules.apply_move` 已在
-  兵move/吃子時重置、其餘走法遞增）。悔棋採「每步走棋前先把
-  `board.clone()` 等狀態存進 `_undo_stack`」的快照法，而非寫反向
-  套用邏輯；`undo()` 不受 `is_game_over()` 限制，可悔掉導致將死/和局
-  的最後一步。
+  `is_game_over()`、`undo()` / `can_undo()`、`tick(elapsed_seconds)`
+  等介面，並管理走棋歷史與遊戲狀態（進行中 / 將死 / 逼和 / 三次重複
+  局面和局 / 50 手和局規則 / 超時判負）。三次重複局面透過
+  `position_history`（局面雜湊 → 出現次數）判斷；50 手和局規則沿用
+  `board.halfmove_clock`（`rules.apply_move` 已在兵move/吃子時重置、
+  其餘走法遞增）。悔棋採「每步走棋前先把 `board.clone()`、
+  `clock.snapshot()` 等狀態存進 `_undo_stack`」的快照法，而非寫反向
+  套用邏輯；`undo()` 不受 `is_game_over()` 限制，可悔掉導致將死/和局/
+  超時的最後一步，雙方西洋棋鐘的剩餘時間也會一併還原。
+- `chess_game/clock.py`：`ChessClock` 類別，追蹤雙方剩餘思考時間
+  （預設每方 5 分鐘），由 `Game.tick()` 每幀呼叫推進目前輪到走棋一方
+  的時間；歸零時記錄 `timed_out_color`，`Game.tick()` 據此把狀態設為
+  `GameStatus.TIMEOUT` 並判對方獲勝。純邏輯層、不依賴 pygame，方便
+  單元測試；CLI 模式因 `input()` 為阻塞式、無即時迴圈可驅動計時，
+  目前只有 GUI 會呼叫 `tick()`。
 - `chess_game/settings.py`：`Settings` 類別，管理音樂音量（`music_volume`）與
   音效音量（`sfx_volume`），存讀取於專案根目錄的 `settings.json`
   （執行期自動產生，已加入 `.gitignore`、不納入版本控制）。
 - `chess_game/gui/`：Pygame 圖形介面。
   - `app.py`：主迴圈與畫面狀態機（`Screen.MENU` / `SETTINGS` / `PLAYING`），
     負責開始畫面、設定畫面、棋盤事件（滑鼠選子走棋、`R` 重新開始、
-    `Ctrl+Z` 悔棋、`Esc` 回主選單）、兵升變彈出選擇視窗、背景音樂與
-    音效播放時機的串接。
+    `Ctrl+Z` 悔棋、`Esc` 回主選單）、兵升變彈出選擇視窗、對局畫面頂端
+    的西洋棋鐘顯示列（`_draw_clock_bar`，每幀用 `pygame.time.Clock`
+    量到的 delta time 呼叫 `game.tick()`）、背景音樂與音效播放時機的
+    串接。新開局/重新開始/悔棋後會設定 `skip_next_tick`，避免把切換
+    畫面當下經過的時間誤算進西洋棋鐘。
   - `renderer.py`：繪製棋盤與棋子（讀取 `assets/images/` 內的正式棋子
     圖片；若某檔案缺漏，該棋子會退回畫圓圈+字母的佔位圖形），並提供
     `render_piece_icon()` 供升變選擇視窗等場合繪製單一棋子圖示。
@@ -108,14 +118,16 @@ flake8 .
 - GUI 兵升變彈出選擇視窗（點選皇后/城堡/主教/騎士，取代自動升為皇后）
 - 三次重複局面和局、50 手和局規則
 - 悔棋（undo）功能（GUI：`Ctrl+Z`；CLI：輸入 `undo`；可多次悔棋，
-  也可悔掉導致將死/和局的最後一步）
-- 基礎單元測試（`tests/`，含 `test_game.py` 涵蓋上述和局規則與悔棋）
+  也可悔掉導致將死/和局/超時的最後一步）
+- 西洋棋鐘計時器（GUI 限定；雙方各 5 分鐘，對局畫面頂端顯示倒數，
+  剩餘 ≤30 秒轉紅色警示；持棋時間歸零自動判負）
+- 基礎單元測試（`tests/`，含 `test_game.py`／`test_clock.py`
+  涵蓋上述和局規則、悔棋與西洋棋鐘）
 
 ## 待辦（TODO）/ 可擴充方向
 
 - 走棋紀錄輸出為 PGN
 - AI / 電腦對手（例如 minimax + alpha-beta 剪枝）
-- 西洋棋鐘計時器
 
 ## 開發慣例
 
