@@ -80,3 +80,104 @@ def test_pawn_move_resets_fifty_move_counter():
 
     assert game.board.halfmove_clock == 0
     assert game.status == GameStatus.ONGOING
+
+
+def test_cannot_undo_fresh_game():
+    game = Game()
+    assert not game.can_undo()
+    assert not game.undo()
+
+
+def test_undo_reverts_last_move():
+    game = Game()
+    _apply_algebraic(game, "e2e4")
+    assert game.board.get_piece(Board.square_to_pos("e4")) is not None
+    assert game.turn is Color.BLACK
+    assert game.can_undo()
+
+    assert game.undo()
+
+    assert game.board.get_piece(Board.square_to_pos("e4")) is None
+    e2_piece = game.board.get_piece(Board.square_to_pos("e2"))
+    assert e2_piece is not None and e2_piece.type is PieceType.PAWN
+    assert game.turn is Color.WHITE
+    assert game.move_history == []
+    assert not game.can_undo()
+
+
+def test_undo_multiple_moves_one_at_a_time():
+    game = Game()
+    for move_str in ("e2e4", "e7e5", "g1f3"):
+        _apply_algebraic(game, move_str)
+    assert len(game.move_history) == 3
+
+    assert game.undo()
+    assert len(game.move_history) == 2
+    assert game.board.get_piece(Board.square_to_pos("g1")).type is PieceType.KNIGHT
+
+    assert game.undo()
+    assert game.undo()
+    assert game.move_history == []
+    assert not game.can_undo()
+    assert game.board.get_piece(Board.square_to_pos("e2")).type is PieceType.PAWN
+    assert game.board.get_piece(Board.square_to_pos("e7")).type is PieceType.PAWN
+
+
+def test_undo_restores_captured_piece():
+    game = Game()
+    game.board.grid = [[None for _ in range(8)] for _ in range(8)]
+    game.board.grid[7][4] = Piece(Color.WHITE, PieceType.KING)  # e1
+    game.board.grid[0][4] = Piece(Color.BLACK, PieceType.KING)  # e8
+    game.board.grid[5][2] = Piece(Color.WHITE, PieceType.KNIGHT)  # c3
+    game.board.grid[3][3] = Piece(Color.BLACK, PieceType.PAWN)  # d5
+    game.board.turn = Color.WHITE
+
+    _apply_algebraic(game, "c3d5")  # 騎士吃兵
+    assert game.board.get_piece(Board.square_to_pos("d5")).color is Color.WHITE
+    assert game.board.halfmove_clock == 0  # 吃子重置計數器
+
+    assert game.undo()
+
+    captured_back = game.board.get_piece(Board.square_to_pos("d5"))
+    assert captured_back is not None
+    assert captured_back.color is Color.BLACK and captured_back.type is PieceType.PAWN
+    knight_back = game.board.get_piece(Board.square_to_pos("c3"))
+    assert knight_back is not None
+    assert knight_back.color is Color.WHITE and knight_back.type is PieceType.KNIGHT
+
+
+def test_undo_restores_pawn_before_promotion():
+    game = Game()
+    game.board.grid = [[None for _ in range(8)] for _ in range(8)]
+    game.board.grid[7][4] = Piece(Color.WHITE, PieceType.KING)  # e1
+    game.board.grid[0][4] = Piece(Color.BLACK, PieceType.KING)  # e8
+    game.board.grid[1][0] = Piece(Color.WHITE, PieceType.PAWN)  # a7
+    game.board.turn = Color.WHITE
+
+    assert game.make_move(
+        Board.square_to_pos("a7"), Board.square_to_pos("a8"), promotion=PieceType.QUEEN
+    )
+    promoted = game.board.get_piece(Board.square_to_pos("a8"))
+    assert promoted.type is PieceType.QUEEN
+
+    assert game.undo()
+
+    assert game.board.get_piece(Board.square_to_pos("a8")) is None
+    pawn_back = game.board.get_piece(Board.square_to_pos("a7"))
+    assert pawn_back is not None and pawn_back.type is PieceType.PAWN
+
+
+def test_undo_after_checkmate_reopens_the_game():
+    """經典「學者將死」，悔掉最後一步應能讓棋局恢復進行中。"""
+    game = Game()
+    for move_str in ("e2e4", "e7e5", "f1c4", "b8c6", "d1h5", "g8f6", "h5f7"):
+        _apply_algebraic(game, move_str)
+    assert game.status == GameStatus.CHECKMATE
+    assert game.is_game_over()
+
+    assert game.undo()
+
+    assert game.status == GameStatus.ONGOING
+    assert not game.is_game_over()
+    assert game.turn is Color.WHITE
+    assert len(game.all_legal_moves()) > 0

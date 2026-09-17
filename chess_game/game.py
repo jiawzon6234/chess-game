@@ -29,6 +29,7 @@ class Game:
         self.winner = None
         self.position_history = {}
         self._record_position()
+        self._undo_stack = []
 
     @property
     def turn(self):
@@ -64,10 +65,34 @@ class Game:
         if move.promotion is not None and promotion is not None:
             move = next((m for m in candidates if m.promotion is promotion), move)
 
+        self._undo_stack.append(
+            (self.board.clone(), self.status, self.winner, dict(self.position_history))
+        )
+
         rules.apply_move(self.board, move)
         self.move_history.append(move)
         self._record_position()
         self._update_status()
+        return True
+
+    def can_undo(self) -> bool:
+        return len(self._undo_stack) > 0
+
+    def undo(self) -> bool:
+        """悔棋一步，回到上一步走完之前的狀態。若沒有步可悔則回傳 False。
+
+        悔棋不受 `is_game_over()` 限制——即使已將死/和局，也能悔掉最後
+        一步棋，讓棋局回到進行中的狀態。
+        """
+        if not self._undo_stack:
+            return False
+
+        board, status, winner, position_history = self._undo_stack.pop()
+        self.board = board
+        self.status = status
+        self.winner = winner
+        self.position_history = position_history
+        self.move_history.pop()
         return True
 
     def _update_status(self) -> None:

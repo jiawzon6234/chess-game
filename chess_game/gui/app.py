@@ -49,18 +49,21 @@ def _pos_from_mouse(mouse_pos: tuple) -> tuple:
     return (y // C.SQUARE_SIZE, x // C.SQUARE_SIZE)
 
 
+_HINTS = "按 R 重新開始，Ctrl+Z 悔棋，Esc 回主選單"
+
+
 def _status_text(game: Game) -> str:
     turn_name = "白方" if game.turn.value == "white" else "黑方"
     if game.status == GameStatus.CHECKMATE:
         winner_name = "白方" if game.winner.value == "white" else "黑方"
-        return f"Chess Game - 將死！{winner_name}獲勝（按 R 重新開始，Esc 回主選單）"
+        return f"Chess Game - 將死！{winner_name}獲勝（{_HINTS}）"
     if game.status == GameStatus.STALEMATE:
-        return "Chess Game - 和棋（逼和，按 R 重新開始，Esc 回主選單）"
+        return f"Chess Game - 和棋（逼和，{_HINTS}）"
     if game.status == GameStatus.DRAW_BY_REPETITION:
-        return "Chess Game - 和棋（三次重複局面，按 R 重新開始，Esc 回主選單）"
+        return f"Chess Game - 和棋（三次重複局面，{_HINTS}）"
     if game.status == GameStatus.DRAW_BY_FIFTY_MOVE_RULE:
-        return "Chess Game - 和棋（50 手和局規則，按 R 重新開始，Esc 回主選單）"
-    return f"Chess Game - 輪到{turn_name}走棋（按 R 重新開始，Esc 回主選單）"
+        return f"Chess Game - 和棋（50 手和局規則，{_HINTS}）"
+    return f"Chess Game - 輪到{turn_name}走棋（{_HINTS}）"
 
 
 def _load_menu_background() -> "pygame.Surface | None":
@@ -272,6 +275,14 @@ def run() -> None:
                     game = Game()
                     selected_pos, legal_targets = None, []
                     pending_promotion = None
+                elif (
+                    event.type == pygame.KEYDOWN
+                    and event.key == pygame.K_z
+                    and event.mod & pygame.KMOD_CTRL
+                ):
+                    if pending_promotion is None and game.undo():
+                        sfx.play_move()
+                        selected_pos, legal_targets = None, []
                 elif event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
                     if pending_promotion is not None:
                         pending_promotion = None

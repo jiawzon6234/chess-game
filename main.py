@@ -26,7 +26,7 @@ def print_board(board: Board) -> None:
 def run_cli() -> None:
     game = Game()
     print("=== 西洋棋 CLI 模式 ===")
-    print("走法格式為起點+終點座標，例如 e2e4；輸入 quit 離開。\n")
+    print("走法格式為起點+終點座標，例如 e2e4；輸入 undo 悔棋、quit 離開。\n")
 
     while not game.is_game_over():
         print_board(game.board)
@@ -36,6 +36,13 @@ def run_cli() -> None:
         if move_str.lower() in ("quit", "exit"):
             print("已離開遊戲。")
             return
+
+        if move_str.lower() == "undo":
+            if game.undo():
+                print("已悔棋一步。")
+            else:
+                print("目前沒有可悔棋的步驟。")
+            continue
 
         if len(move_str) not in (4, 5):
             print("格式錯誤，請輸入如 e2e4 的走法。")
